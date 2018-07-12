@@ -3,7 +3,7 @@
 *	всех функций и структур.
 *
 *	Пример инициализации модуля:
-*	illdb *db;
+*	illdb db;
 *	illdb_init("/path/to/database/illum.db", &db, file_stream);
 *
 *	Пример вызова функций:
