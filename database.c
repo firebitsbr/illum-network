@@ -8,7 +8,7 @@
 /**
 *	Прототипы приватных функций
 */
-static bool illdb_newnode(sqlite3 *, char *, char *, int *, char *, char *, FILE *);
+static bool illdb_newnode(sqlite3 *, char *, char *, int, char *, char *, FILE *);
 static int illdb_settask(sqlite3 *, char *, char *, char *, FILE *);
 static bool illdb_tables(sqlite3 *, FILE *);
 /**
@@ -22,22 +22,40 @@ static bool illdb_tables(sqlite3 *, FILE *);
 bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
 {
 	bool status = false;
+	int st_sqlite3 = -100;
 
-	if (!dbpath || strlen(dbpath) < 8 || !dbstruct || !errf)
+	if (!dbpath || strlen(dbpath) < 8 || !dbstruct || !errf) {
+		printf("Error: Input params in illdb_init are incorrect.\n");
 		return status;
-	if (!sqlite3_open(dbpath, &dbstruct->db) || !illdb_tables(dbstruct->db, errf))
+	}
+	if ((st_sqlite3 = sqlite3_open(dbpath, &dbstruct->db)) != SQLITE_OK
+		|| !illdb_tables(dbstruct->db, errf)) {
+		if (st_sqlite3 != SQLITE_OK)
+			fprintf(errf, "Can't open database: %s\n", sqlite3_errmsg(dbstruct->db));
 		return status;
+	}
 
-	dbstruct->removetask = illdb_removetask;
-	dbstruct->nodelist = illdb_nodelist;
+	//dbstruct->removetask = illdb_removetask;
+	//dbstruct->nodelist = illdb_nodelist;
 	dbstruct->settask = illdb_settask;
 	dbstruct->newnode = illdb_newnode;
 
-	if (dbstruct->removetask && dbstruct->nodelist && dbstruct->settask 
-		&& dbstruct->newnode)
+	/*if (dbstruct->removetask && dbstruct->nodelist && dbstruct->settask 
+		&& dbstruct->newnode)*/
 		status = true;
 
 	return status;
+}
+/**
+*	dbstruct - Функция освобождения памяти из под
+*	структуры illdb.
+*
+*	@dbstruct - Главная управляющая структура.
+*/
+void illdb_free(illdb *dbstruct)
+{
+	// Perhaps here will be more code then now :)
+	sqlite3_close(dbstruct->db);
 }
 /**
 *	illdb_newnode - Функция занесения новой ноды в базу данных.
@@ -50,13 +68,13 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
 *	@errf - Файловый стрим для записи ошибок.
 */
 static bool illdb_newnode(sqlite3 *db, char *ipaddr, 
-						char *hash, int *mseconds,
-						char *about, char *cert)
+						char *hash, int mseconds,
+						char *about, char *cert, FILE *errf)
 {
 	sqlite3_stmt *rs = NULL;
-	char *sql, *mseconds_str;
 	unsigned int length = 0;
 	bool status = false;
+	char *sql;
 
 	if (!ipaddr || strlen(ipaddr) < 7 || !hash || strlen(hash) < 10
 		|| mseconds < 0 || !about || strlen(about) < 50 || !cert
@@ -65,16 +83,14 @@ static bool illdb_newnode(sqlite3 *db, char *ipaddr,
 		return status;
 	}
 
-	mseconds_str = (char *)malloc(10);
-	itoa(mseconds, mseconds_str, 10);
-	if ((length = strlen(ipaddr) + strlen(hash) + strlen(mseconds_str)
-		+ strlen(about) + strlen(cert)) > MAX_TEXTSIZE) {
+	if ((length = strlen(ipaddr) + strlen(hash)+ strlen(about)
+		+ strlen(cert)) > MAX_TEXTSIZE) {
 		fprintf(errf, "Error: Text size for task more then you can write.\n");
 		goto exit_newnode;
 	}
 	sql = (char *)malloc(length + 100);
-	sprintf(sql, "INSERT INTO `nodes` VALUES (NULL, '%s', '%s', '%s', '%s', '%s');",
-			ipaddr, hash, mseconds_str, about, cert);
+	sprintf(sql, "INSERT INTO `nodes` VALUES (NULL, '%s', '%s', '%i', '%s', '%s');",
+			ipaddr, hash, mseconds, about, cert);
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Can't set new node to database.\n");
@@ -85,7 +101,6 @@ static bool illdb_newnode(sqlite3 *db, char *ipaddr,
 exit_newnode:
 	if (rs && rs != NULL)
 		sqlite3_finalize(rs);
-	free(mseconds_str);
 	if (sql)
 		free(sql);
 
@@ -129,7 +144,7 @@ static int illdb_settask(sqlite3 *db, char *ipaddr,
 		goto exit_settask;
 	}
 	sqlite3_prepare_v2(db, "SELECT last_insert_rowid();", -1, &rs, NULL);
-	id = atoi(sqlite3_column_text(rs, 0));
+	id = atoi((const char *)sqlite3_column_text(rs, 0));
 
 exit_settask:
 	if (rs && rs != NULL)
