@@ -35,3 +35,4 @@ typedef struct {
 *	Доступные функции
 */
 bool illdb_init(char *, illdb *, FILE *);
+void illdb_free(illdb *);
