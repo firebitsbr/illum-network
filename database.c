@@ -4,6 +4,10 @@
 *
 *	@mrrva - 2018
 */
+#include "./database.h"
+/**
+*	Прототипы приватных функций
+*/
 static bool illdb_newnode(sqlite3 *, char *, char *, int *, char *, char *, FILE *);
 static int illdb_settask(sqlite3 *, char *, char *, char *, FILE *);
 static bool illdb_tables(sqlite3 *, FILE *);
