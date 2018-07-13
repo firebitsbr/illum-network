@@ -10,6 +10,7 @@
 */
 static bool illdb_newnode(sqlite3 *, char *, char *, int, char *, char *, FILE *);
 static int illdb_settask(sqlite3 *, char *, char *, char *, FILE *);
+static bool illdb_removetask(sqlite3 *, unsigned int, FILE *);
 static bool illdb_tables(sqlite3 *, FILE *);
 /**
 *	illdb_init - Функция инициализации подключения
@@ -35,7 +36,7 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
 		return status;
 	}
 
-	//dbstruct->removetask = illdb_removetask;
+	dbstruct->removetask = illdb_removetask;
 	//dbstruct->nodelist = illdb_nodelist;
 	dbstruct->settask = illdb_settask;
 	dbstruct->newnode = illdb_newnode;
@@ -47,15 +48,36 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
 	return status;
 }
 /**
-*	dbstruct - Функция освобождения памяти из под
-*	структуры illdb.
+*	illdb_removetask - Функция удаления задания из базы данных.
 *
-*	@dbstruct - Главная управляющая структура.
+*	@db - Указатель на подключение к базе данных.
+*	@id - Id задания в базе данных.
+*	@errf - Файловый стрим для записи ошибок.
 */
-void illdb_free(illdb *dbstruct)
+static bool illdb_removetask(sqlite3 *db, unsigned int id, FILE *errf)
 {
-	// Perhaps here will be more code then now :)
-	sqlite3_close(dbstruct->db);
+	sqlite3_stmt *rs = NULL;
+	char *sql = (char *)malloc(200);
+	bool status = false;
+
+	if (id > 100000000000000000000) {
+		fprintf(errf, "Error: Invalid id in illdb_removetask.\n");
+		goto exit_removetask;
+	}
+
+	sprintf(sql, "UPDATE `task` SET `status`='1' WHERE `id`='%d';", id);
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_DONE) {
+		fprintf(errf, "Error: Can't update status of task to `done`.\n");
+		goto exit_removetask;
+	}
+	status = true;
+
+exit_removetask:
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	free(sql);
+	return status;
 }
 /**
 *	illdb_newnode - Функция занесения новой ноды в базу данных.
@@ -190,4 +212,15 @@ exit_tables:
 	if (rs && rs != NULL)
 		sqlite3_finalize(rs);
 	return status;
+}
+/**
+*	dbstruct - Функция освобождения памяти из под
+*	структуры illdb.
+*
+*	@dbstruct - Главная управляющая структура.
+*/
+void illdb_free(illdb *dbstruct)
+{
+	// Perhaps here will be more code then now :)
+	sqlite3_close(dbstruct->db);
 }
