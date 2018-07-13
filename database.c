@@ -60,7 +60,7 @@ static bool illdb_removetask(sqlite3 *db, unsigned int id, FILE *errf)
 	char *sql = (char *)malloc(200);
 	bool status = false;
 
-	if (id > 100000000000000000000) {
+	if (id > 2147483647) {
 		fprintf(errf, "Error: Invalid id in illdb_removetask.\n");
 		goto exit_removetask;
 	}
