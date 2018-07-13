@@ -68,8 +68,8 @@ void illdb_free(illdb *dbstruct)
 *	@errf - Файловый стрим для записи ошибок.
 */
 static bool illdb_newnode(sqlite3 *db, char *ipaddr, 
-						char *hash, int mseconds,
-						char *about, char *cert, FILE *errf)
+	char *hash, int mseconds,
+	char *about, char *cert, FILE *errf)
 {
 	sqlite3_stmt *rs = NULL;
 	unsigned int length = 0;
@@ -103,7 +103,6 @@ exit_newnode:
 		sqlite3_finalize(rs);
 	if (sql)
 		free(sql);
-
 	return status;
 }
 /**
@@ -116,7 +115,7 @@ exit_newnode:
 *	@errf - Файловый стрим для записи ошибок.
 */
 static int illdb_settask(sqlite3 *db, char *ipaddr, 
-						char *cert, char *text, FILE *errf)
+	char *cert, char *text, FILE *errf)
 {
 	sqlite3_stmt *rs = NULL;
 	unsigned int length = 0;
@@ -150,7 +149,6 @@ exit_settask:
 	if (rs && rs != NULL)
 		sqlite3_finalize(rs);
 	free(sql);
-
 	return id; /* -1 is error */
 }
 /**
