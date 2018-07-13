@@ -25,13 +25,19 @@ struct node_list {
 	char *ipaddr, *hash, *about, *cert;
 };
 
+struct stask {
+	unsigned int id;
+	char *ipaddr, *cert, *text;
+};
+
 typedef struct {
 	sqlite3 *db;
 	struct node_list *(*nodelist)();
+	struct stask (*currenttask)();
 	bool (*removetask)();
 	char *(*setting)();
 	bool (*newnode)();
-	int (*settask)();
+	int (*newtask)();
 } illdb;
 /**
 *	Доступные функции
