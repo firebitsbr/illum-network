@@ -4,6 +4,8 @@ int main()
 {
 	illdb db;
 	FILE *fp = fopen("./log.txt", "a+");
+	struct node_list *nodes;
+	unsigned int length = 0, i = 0;
 
 	/* Init illdb */
 	if (!illdb_init("./illum.db", &db, fp))
@@ -14,6 +16,14 @@ int main()
 		"Some info abount server, Some info abount server, Some info abount server, Some info abount server,"
 		"Some info abount server, Some info abount server, Some info abount server, ",
 		"CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT", fp);
+
+	/* Getting node list from database */
+	nodes = db.nodelist(db.db, &length, fp);
+	printf("Number of nodes: %i\n", length);
+
+	for (;i < length; i++)
+		printf("Ip:%s Hash:%s\n", nodes[i].ipaddr, nodes[i].hash);
+
 
 	/* Free memory */
 	fclose(fp);
