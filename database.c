@@ -12,6 +12,7 @@ static bool	illdb_newnode(sqlite3 *, char *, char *, unsigned int, char *, char 
 static int	illdb_settask(sqlite3 *, char *, char *, char *, FILE *);
 struct node_list *illdb_nodelist(sqlite3 *, unsigned int *, FILE *);
 static bool	illdb_removetask(sqlite3 *, unsigned int, FILE *);
+static struct stask illdb_currenttask(sqlite3 *, FILE *);
 static bool	illdb_tables(sqlite3 *, FILE *);
 /**
 *	illdb_init - Функция инициализации подключения
@@ -37,13 +38,14 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
 		return status;
 	}
 
+	dbstruct->currenttask = illdb_currenttask;
 	dbstruct->removetask = illdb_removetask;
 	dbstruct->nodelist = illdb_nodelist;
-	dbstruct->settask = illdb_settask;
+	dbstruct->newtask = illdb_settask;
 	dbstruct->newnode = illdb_newnode;
 
-	if (dbstruct->removetask && dbstruct->nodelist && dbstruct->settask 
-		&& dbstruct->newnode)
+	if (dbstruct->removetask && dbstruct->nodelist && dbstruct->newtask 
+		&& dbstruct->newnode && dbstruct->currenttask)
 		status = true;
 
 	return status;
@@ -129,6 +131,41 @@ exit_newnode:
 	return status;
 }
 /**
+*	illdb_currenttask - Функция извлекающая текущее задание для
+*	сервера.
+*
+*	@db - Указатель на подключение к базе данных.
+*	@errf - Файловый стрим для записи ошибок.
+*/
+static struct stask illdb_currenttask(sqlite3 *db, FILE *errf)
+{
+	static struct stask data;
+	sqlite3_stmt *rs = NULL;
+
+	sqlite3_prepare_v2(db, "SELECT * FROM `tasks` ORDER BY `id` DESC LIMIT 1",
+		-1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_DONE) {
+		fprintf(errf, "Error: Can't get current task from db.\n");
+		goto exit_currenttask;
+	}
+	for (int i = 0; i < 5; i++)
+		if (strlen((const char *)sqlite3_column_text(rs, i)) > MAX_TEXTSIZE) {
+			fprintf(errf, "Error: Value of element is very long "
+				"in illdb_currenttask\n");
+			goto exit_currenttask;
+		}
+
+	data.id = (unsigned int)atoi((const char *)sqlite3_column_text(rs, 0));
+	data.cert = (char *)sqlite3_column_text(rs, 2);
+	data.ipaddr = (char *)sqlite3_column_text(rs, 1);
+	data.text = (char *)sqlite3_column_text(rs, 3);
+
+exit_currenttask:
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	return data;
+}
+/**
 *	illdb_nodelist - Функция извлекающая из базы список всех нод.
 *
 *	@db - Указатель на подключение к базе данных.
@@ -152,13 +189,9 @@ struct node_list *illdb_nodelist(sqlite3 *db, unsigned int *num, FILE *errf)
 			}
 		data[length - 1].id = (unsigned int)atoi((const char *)sqlite3_column_text(rs, 0));
 		data[length - 1].mseconds = (unsigned int)atoi((const char *)sqlite3_column_text(rs, 3));
-		data[length - 1].ipaddr = (char *)malloc(MAX_TEXTSIZE + 1);
 		data[length - 1].ipaddr = (char *)sqlite3_column_text(rs, 1);
-		data[length - 1].hash = (char *)malloc(MAX_TEXTSIZE + 1);
 		data[length - 1].hash = (char *)sqlite3_column_text(rs, 2);
-		data[length - 1].cert = (char *)malloc(MAX_TEXTSIZE + 1);
 		data[length - 1].cert = (char *)sqlite3_column_text(rs, 5);
-		data[length - 1].about = (char *)malloc(MAX_TEXTSIZE + 1);
 		data[length - 1].about = (char *)sqlite3_column_text(rs, 4);
 	}
 	(*num) = length - 1;
