@@ -8,10 +8,11 @@
 /**
 *	Прототипы приватных функций
 */
-static bool illdb_newnode(sqlite3 *, char *, char *, int, char *, char *, FILE *);
-static int illdb_settask(sqlite3 *, char *, char *, char *, FILE *);
-static bool illdb_removetask(sqlite3 *, unsigned int, FILE *);
-static bool illdb_tables(sqlite3 *, FILE *);
+static bool	illdb_newnode(sqlite3 *, char *, char *, unsigned int, char *, char *, FILE *);
+static int	illdb_settask(sqlite3 *, char *, char *, char *, FILE *);
+struct node_list *illdb_nodelist(sqlite3 *, unsigned int *, FILE *);
+static bool	illdb_removetask(sqlite3 *, unsigned int, FILE *);
+static bool	illdb_tables(sqlite3 *, FILE *);
 /**
 *	illdb_init - Функция инициализации подключения
 *	к базе данных с поледующим создание структуры.
@@ -37,12 +38,12 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
 	}
 
 	dbstruct->removetask = illdb_removetask;
-	//dbstruct->nodelist = illdb_nodelist;
+	dbstruct->nodelist = illdb_nodelist;
 	dbstruct->settask = illdb_settask;
 	dbstruct->newnode = illdb_newnode;
 
-	/*if (dbstruct->removetask && dbstruct->nodelist && dbstruct->settask 
-		&& dbstruct->newnode)*/
+	if (dbstruct->removetask && dbstruct->nodelist && dbstruct->settask 
+		&& dbstruct->newnode)
 		status = true;
 
 	return status;
@@ -90,7 +91,7 @@ exit_removetask:
 *	@errf - Файловый стрим для записи ошибок.
 */
 static bool illdb_newnode(sqlite3 *db, char *ipaddr, 
-	char *hash, int mseconds,
+	char *hash, unsigned int mseconds,
 	char *about, char *cert, FILE *errf)
 {
 	sqlite3_stmt *rs = NULL;
@@ -126,6 +127,46 @@ exit_newnode:
 	if (sql)
 		free(sql);
 	return status;
+}
+/**
+*	illdb_nodelist - Функция извлекающая из базы список всех нод.
+*
+*	@db - Указатель на подключение к базе данных.
+*	@num - Количество нод в базе.
+*	@errf - Файловый стрим для записи ошибок.
+*/
+struct node_list *illdb_nodelist(sqlite3 *db, unsigned int *num, FILE *errf)
+{
+	struct node_list *data = (struct node_list *)malloc(sizeof(struct node_list));
+	sqlite3_stmt *rs = NULL;
+	unsigned int length = 0;
+
+	sqlite3_prepare_v2(db, "SELECT * FROM `nodes`", -1, &rs, NULL);
+	while (length++, sqlite3_step(rs) == SQLITE_ROW) {
+		data = (struct node_list *)realloc(data, sizeof(struct node_list) * length + 1);
+		for (int i = 0; i < 6; i++)
+			if (strlen((const char *)sqlite3_column_text(rs, i)) > MAX_TEXTSIZE) {
+				fprintf(errf, "Error: Value of element is very long in illdb_nodelist\n");
+				(*num) = 0;
+				goto exit_nodelist;
+			}
+		data[length - 1].id = (unsigned int)atoi((const char *)sqlite3_column_text(rs, 0));
+		data[length - 1].mseconds = (unsigned int)atoi((const char *)sqlite3_column_text(rs, 3));
+		data[length - 1].ipaddr = (char *)malloc(MAX_TEXTSIZE + 1);
+		data[length - 1].ipaddr = (char *)sqlite3_column_text(rs, 1);
+		data[length - 1].hash = (char *)malloc(MAX_TEXTSIZE + 1);
+		data[length - 1].hash = (char *)sqlite3_column_text(rs, 2);
+		data[length - 1].cert = (char *)malloc(MAX_TEXTSIZE + 1);
+		data[length - 1].cert = (char *)sqlite3_column_text(rs, 5);
+		data[length - 1].about = (char *)malloc(MAX_TEXTSIZE + 1);
+		data[length - 1].about = (char *)sqlite3_column_text(rs, 4);
+	}
+	(*num) = length - 1;
+
+exit_nodelist:
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	return data;
 }
 /**
 *	illdb_settask - Функция создания новой задачи.
@@ -204,6 +245,12 @@ static bool illdb_tables(sqlite3 *db, FILE *errf)
 	"`about` text NOT NULL, `cert` text NOT NULL);", -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Sqlite can't create nodes table.\n");
+		goto exit_tables;
+	}
+	sqlite3_prepare_v2(db, "CREATE TABLE IF NOT EXISTS `settings` ("
+	"`name` text NOT NULL, `value` text NOT NULL);", -1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_DONE) {
+		fprintf(errf, "Error: Sqlite can't create settings table.\n");
 		goto exit_tables;
 	}
 	status = true;
