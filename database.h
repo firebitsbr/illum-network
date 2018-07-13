@@ -21,13 +21,15 @@
 *	Доступные структуры
 */
 struct node_list {
-
+	unsigned int id, mseconds;
+	char *ipaddr, *hash, *about, *cert;
 };
 
 typedef struct {
 	sqlite3 *db;
 	struct node_list *(*nodelist)();
 	bool (*removetask)();
+	char *(*setting)();
 	bool (*newnode)();
 	int (*settask)();
 } illdb;
