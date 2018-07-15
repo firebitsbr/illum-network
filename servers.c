@@ -22,27 +22,34 @@ struct srvdata {
 *	illsrv_init - Функция инициализации потоков серверов.
 *
 *	@srvstruct - Главная управляющая структура.
+*	@db - Структура управления базой данных.
 *	@errf - Файловый стрим для записи ошибок.
 */
 bool illsrv_init(illsrv *srvstruct, illdb *db, FILE *errf)
 {
-	struct srvdata data = {.get = false, .send = false,
-		.db = db, .errf = errf};
+	struct srvdata *data = (struct srvdata *)malloc(sizeof(struct srvdata));
+
+	data->send = data->get = false;
+	data->errf = errf;
+	data->db = db;
 
 	if (!srvstruct || srvstruct == NULL || !db || db == NULL
 		|| !errf || errf == NULL) {
 		fprintf(errf, "Error: Incorrect input data in illsrv_init\n");
+		free(data);
 		return false;
 	}
 
-	if (pthread_create(&srvstruct->getserver, NULL, (void *)illsrv_getserver,
-		&data) != 0) {
+	if (pthread_create(&srvstruct->getserver, NULL, illsrv_getserver,
+		data) != 0) {
 		fprintf(errf, "Error: Can't start getserver.");
+		free(data);
 		return false;
 	}
-	if (pthread_create(&srvstruct->sendserver, NULL, (void *)illsrv_sendserver,
-		&data) != 0) {
+	if (pthread_create(&srvstruct->sendserver, NULL, illsrv_sendserver,
+		data) != 0) {
 		fprintf(errf, "Error: Can't start sendserver.");
+		free(data);
 		return false;
 	}
 
@@ -55,6 +62,7 @@ bool illsrv_init(illsrv *srvstruct, illdb *db, FILE *errf)
 */
 static void *illsrv_getserver(void *data)
 {
+	//printf("dfgdfddf324\n");
 	((struct srvdata *) data)->send = true;
 	pthread_exit(0);
 }
@@ -65,14 +73,17 @@ static void *illsrv_getserver(void *data)
 */
 static void *illsrv_sendserver(void *data)
 {
-	int socket_r = socket(AF_INET, SOCK_STREAM , 0);
+	struct stask *ctask = (struct stask *)malloc(sizeof(struct stask));
 	struct srvdata *srvd = ((struct srvdata *) data);
+	int socket_r;
 	struct sockaddr_in server;
-	struct stask ctask;
+	struct timeval timeout;
 	char *message;
 
-	server.sin_family = AF_INET;
 	server.sin_port = htons(ILLUM_PORT);
+	timeout.tv_sec = SEND_TIMEOUT;
+	server.sin_family = AF_INET;
+	timeout.tv_usec = 0;
 	srvd->get = true;
 
 	if (!srvd->send) {
@@ -81,14 +92,11 @@ static void *illsrv_sendserver(void *data)
 	}
 
 	while (true) {
-		ctask = srvd->db->currenttask(srvd->db->db, srvd->errf);
-		message = ctask.text;
-
-		if (!ctask.ipaddr || ctask.ipaddr == NULL || ctask.text
-			|| ctask.text == NULL || strlen(ctask.ipaddr) < 7
-			|| strlen(ctask.text) > TEXTSIZE_SEND) {
+		srvd->db->currenttask(ctask, srvd->errf);
+		if (!ctask->ipaddr || ctask->ipaddr == NULL || !ctask->text
+			|| ctask->text == NULL || strlen(ctask->ipaddr) < 7
+			|| strlen(ctask->text) > TEXTSIZE_SEND) {
 			sleep(.5);
-			printf("++\n");
 			continue;
 		}
 		if (!srvd->send || !srvd->get) {
@@ -96,20 +104,33 @@ static void *illsrv_sendserver(void *data)
 			goto exit_sendserver;
 		}
 
-		server.sin_addr.s_addr = inet_addr(ctask.ipaddr);
+		socket_r = socket(AF_INET, SOCK_STREAM , 0);
+		if (setsockopt(socket_r, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
+			sizeof(timeout))< 0) {
+			fprintf(srvd->errf, "Error: Can't set a timeout for "
+					"illsrv_sendserver.\n");
+			goto exit_sendserver;
+		}
+
+		memset(server.sin_zero, '\0', sizeof(server.sin_zero)); 
+		message = ctask->text;
+		if (ctask->cert && ctask->cert != NULL)
+			// message = srvd->encrypt->encode(ctask->text, ctask->cert); 
+			message = ctask->text;
+
+		server.sin_addr.s_addr = inet_addr(ctask->ipaddr);
 		if (connect(socket_r, (struct sockaddr *)&server, sizeof(server)) < 0)
 			continue;
-		if (ctask.cert && ctask.cert != NULL)
-			/* message = srvd->encrypt->encode(ctask.text, ctask.cert);*/
-			message = ctask.text;
-
 		if (send(socket_r, message, strlen(message), 0) < 0)
-			fprintf(srvd->errf, "Warring: Can't send message to %s.\n", ctask.ipaddr);
-		srvd->db->removetask(srvd->db->db, ctask.id, srvd->errf);
+			fprintf(srvd->errf, "Warring: Can't send message to %s.\n",
+					ctask->ipaddr);
+		srvd->db->removetask(ctask->id, srvd->errf);
+
+		close(socket_r);
 	}
 
 exit_sendserver:
-	if (message && message != NULL)
-		free(message);
+	/*if (message && message != NULL)
+		free(message);*/
 	pthread_exit(0);
 }
