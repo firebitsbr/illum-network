@@ -12,13 +12,13 @@ int main()
 		printf("Error: Can't init illdb struct.\n");
 
 	/* Entering value to database ... */
-	db.newnode(db.db, "8.8.8.8", "s0m3hashs0m3hashs0m3hash", 500, 
+	db.newnode("8.8.8.8", "s0m3hashs0m3hashs0m3hash", 500, 
 		"Some info abount server, Some info abount server, Some info abount server, Some info abount server,"
 		"Some info abount server, Some info abount server, Some info abount server, ",
 		"CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT", fp);
 
 	/* Getting node list from database */
-	nodes = db.nodelist(db.db, &length, fp);
+	nodes = db.nodelist(&length, fp);
 	printf("Number of nodes: %i\n", length);
 
 	for (;i < length; i++)
