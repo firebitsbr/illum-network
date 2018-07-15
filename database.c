@@ -8,12 +8,16 @@
 /**
 *	Прототипы приватных функций
 */
-static bool	illdb_newnode(sqlite3 *, char *, char *, unsigned int, char *, char *, FILE *);
-static int	illdb_settask(sqlite3 *, char *, char *, char *, FILE *);
-struct node_list *illdb_nodelist(sqlite3 *, unsigned int *, FILE *);
-static bool	illdb_removetask(sqlite3 *, unsigned int, FILE *);
-static struct stask illdb_currenttask(sqlite3 *, FILE *);
-static bool	illdb_tables(sqlite3 *, FILE *);
+static bool	illdb_newnode(char *, char *, unsigned int, char *, char *, FILE *);
+static int	illdb_settask(char *, char *, char *, FILE *);
+struct node_list *illdb_nodelist(unsigned int *, FILE *);
+static bool	illdb_removetask(unsigned int, FILE *);
+static void illdb_currenttask(struct stask *, FILE *);
+static bool	illdb_tables(FILE *);
+/**
+*	Глобальные переменные
+*/
+static sqlite3 *db;
 /**
 *	illdb_init - Функция инициализации подключения
 *	к базе данных с поледующим создание структуры.
@@ -31,10 +35,9 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
 		printf("Error: Input params in illdb_init are incorrect.\n");
 		return status;
 	}
-	if ((st_sqlite3 = sqlite3_open(dbpath, &dbstruct->db)) != SQLITE_OK
-		|| !illdb_tables(dbstruct->db, errf)) {
+	if ((st_sqlite3 = sqlite3_open(dbpath, &db)) != SQLITE_OK || !illdb_tables(errf)) {
 		if (st_sqlite3 != SQLITE_OK)
-			fprintf(errf, "Can't open database: %s\n", sqlite3_errmsg(dbstruct->db));
+			fprintf(errf, "Can't open database: %s\n", sqlite3_errmsg(db));
 		return status;
 	}
 
@@ -53,11 +56,10 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
 /**
 *	illdb_removetask - Функция удаления задания из базы данных.
 *
-*	@db - Указатель на подключение к базе данных.
 *	@id - Id задания в базе данных.
 *	@errf - Файловый стрим для записи ошибок.
 */
-static bool illdb_removetask(sqlite3 *db, unsigned int id, FILE *errf)
+static bool illdb_removetask(unsigned int id, FILE *errf)
 {
 	sqlite3_stmt *rs = NULL;
 	char *sql = (char *)malloc(200);
@@ -68,9 +70,9 @@ static bool illdb_removetask(sqlite3 *db, unsigned int id, FILE *errf)
 		goto exit_removetask;
 	}
 
-	sprintf(sql, "UPDATE `task` SET `status`='1' WHERE `id`='%d';", id);
+	sprintf(sql, "UPDATE `tasks` SET `status`='1' WHERE `id`='%d';", id);
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
-	if (sqlite3_step(rs) != SQLITE_DONE) {
+	if (sqlite3_step(rs) != SQLITE_OK) {
 		fprintf(errf, "Error: Can't update status of task to `done`.\n");
 		goto exit_removetask;
 	}
@@ -85,16 +87,15 @@ exit_removetask:
 /**
 *	illdb_newnode - Функция занесения новой ноды в базу данных.
 *
-*	@db - Указатель на подключение к базе данных.
 *	@ipaddr - Ip адрес получателя сообщения.
 *	@hash - Ключ ноды для распознования в сети.
 *	@cert - Публичный сертификат получателя сообщения.
 *	@text - Текст сообщения.
 *	@errf - Файловый стрим для записи ошибок.
 */
-static bool illdb_newnode(sqlite3 *db, char *ipaddr, 
-	char *hash, unsigned int mseconds,
-	char *about, char *cert, FILE *errf)
+static bool illdb_newnode(char *ipaddr, char *hash,
+	unsigned int mseconds, char *about, char *cert,
+	FILE *errf)
 {
 	sqlite3_stmt *rs = NULL;
 	unsigned int length = 0;
@@ -110,7 +111,7 @@ static bool illdb_newnode(sqlite3 *db, char *ipaddr,
 
 	if ((length = strlen(ipaddr) + strlen(hash)+ strlen(about)
 		+ strlen(cert)) > MAX_TEXTSIZE) {
-		fprintf(errf, "Error: Text size for task more then you can write.\n");
+		fprintf(errf, "Error: Text size for task more than you can write.\n");
 		goto exit_newnode;
 	}
 	sql = (char *)malloc(length + 100);
@@ -134,20 +135,22 @@ exit_newnode:
 *	illdb_currenttask - Функция извлекающая текущее задание для
 *	сервера.
 *
-*	@db - Указатель на подключение к базе данных.
 *	@errf - Файловый стрим для записи ошибок.
 */
-static struct stask illdb_currenttask(sqlite3 *db, FILE *errf)
+static void illdb_currenttask(struct stask *data, FILE *errf)
 {
-	static struct stask data;
 	sqlite3_stmt *rs = NULL;
 
-	sqlite3_prepare_v2(db, "SELECT * FROM `tasks` ORDER BY `id` DESC LIMIT 1",
-		-1, &rs, NULL);
-	if (sqlite3_step(rs) != SQLITE_DONE) {
-		fprintf(errf, "Error: Can't get current task from db.\n");
+	if (!data || data == NULL) {
+		fprintf(errf, "Error: Incorrect pointer in illdb_currenttask.\n");
 		goto exit_currenttask;
 	}
+
+	sqlite3_prepare_v2(db, "SELECT * FROM `tasks` WHERE `status`='0' "
+		"ORDER BY `id` DESC LIMIT 1", -1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_ROW)
+		goto exit_currenttask;
+
 	for (int i = 0; i < 5; i++)
 		if (strlen((const char *)sqlite3_column_text(rs, i)) > MAX_TEXTSIZE) {
 			fprintf(errf, "Error: Value of element is very long "
@@ -155,24 +158,22 @@ static struct stask illdb_currenttask(sqlite3 *db, FILE *errf)
 			goto exit_currenttask;
 		}
 
-	data.id = (unsigned int)atoi((const char *)sqlite3_column_text(rs, 0));
-	data.cert = (char *)sqlite3_column_text(rs, 2);
-	data.ipaddr = (char *)sqlite3_column_text(rs, 1);
-	data.text = (char *)sqlite3_column_text(rs, 3);
+	data->id = (unsigned int)atoi((const char *)sqlite3_column_text(rs, 0));
+	data->cert = (char *)sqlite3_column_text(rs, 2);
+	data->ipaddr = (char *)sqlite3_column_text(rs, 1);
+	data->text = (char *)sqlite3_column_text(rs, 3);
 
 exit_currenttask:
 	if (rs && rs != NULL)
 		sqlite3_finalize(rs);
-	return data;
-}
+}	
 /**
 *	illdb_nodelist - Функция извлекающая из базы список всех нод.
 *
-*	@db - Указатель на подключение к базе данных.
 *	@num - Количество нод в базе.
 *	@errf - Файловый стрим для записи ошибок.
 */
-struct node_list *illdb_nodelist(sqlite3 *db, unsigned int *num, FILE *errf)
+struct node_list *illdb_nodelist(unsigned int *num, FILE *errf)
 {
 	struct node_list *data = (struct node_list *)malloc(sizeof(struct node_list));
 	sqlite3_stmt *rs = NULL;
@@ -204,14 +205,12 @@ exit_nodelist:
 /**
 *	illdb_settask - Функция создания новой задачи.
 *
-*	@db - Указатель на подключение к базе данных.
 *	@ipaddr - Ip адрес получателя сообщения.
 *	@cert - Публичный сертификат получателя сообщения.
 *	@text - Текст сообщения.
 *	@errf - Файловый стрим для записи ошибок.
 */
-static int illdb_settask(sqlite3 *db, char *ipaddr, 
-	char *cert, char *text, FILE *errf)
+static int illdb_settask(char *ipaddr, char *cert, char *text, FILE *errf)
 {
 	sqlite3_stmt *rs = NULL;
 	unsigned int length = 0;
@@ -250,17 +249,17 @@ exit_settask:
 /**
 *	illdb_tables - Функция создания базы данных проекта.
 *
-*	@db - Указатель на подключение к базе данных.
 *	@errf - Файловый стрим для записи ошибок.
 */
-static bool illdb_tables(sqlite3 *db, FILE *errf)
+static bool illdb_tables(FILE *errf)
 {
 	sqlite3_stmt *rs = NULL;
 	bool status = false;
 
 	sqlite3_prepare_v2(db, "CREATE TABLE IF NOT EXISTS `tasks` ("
 	"`id` INTEGER PRIMARY KEY AUTOINCREMENT, `ip` text NOT NULL,"
-	"`cert` text, `text` text NOT NULL, `status` int(11) NOT NULL);", -1, &rs, NULL);
+	"`cert` text, `text` text NOT NULL, `status` int(11) NOT NULL DEFAULT 0);",
+	-1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Sqlite can't create tasks table.\n");
 		goto exit_tables;
@@ -302,5 +301,5 @@ exit_tables:
 void illdb_free(illdb *dbstruct)
 {
 	// Perhaps here will be more code then now :)
-	sqlite3_close(dbstruct->db);
+	sqlite3_close(db);
 }
