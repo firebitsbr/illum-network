@@ -119,9 +119,8 @@ static void *illsrv_sendserver(void *data)
 			message = ctask->text;
 
 		server.sin_addr.s_addr = inet_addr(ctask->ipaddr);
-		if (connect(socket_r, (struct sockaddr *)&server, sizeof(server)) < 0)
-			continue;
-		if (send(socket_r, message, strlen(message), 0) < 0)
+		if (connect(socket_r, (struct sockaddr *)&server, sizeof(server)) < 0
+			|| send(socket_r, message, strlen(message), 0) < 0)
 			fprintf(srvd->errf, "Warring: Can't send message to %s.\n",
 					ctask->ipaddr);
 		srvd->db->removetask(ctask->id, srvd->errf);
