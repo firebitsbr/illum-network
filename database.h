@@ -31,9 +31,8 @@ struct stask {
 };
 
 typedef struct {
-	sqlite3 *db;
 	struct node_list *(*nodelist)();
-	struct stask (*currenttask)();
+	void (*currenttask)();
 	bool (*removetask)();
 	char *(*setting)();
 	bool (*newnode)();
