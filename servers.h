@@ -9,10 +9,12 @@
 #include <stdbool.h>
 #include <pthread.h>
 #include <unistd.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include "./database.h"
 #define TEXTSIZE_SEND 2000
+#define SEND_TIMEOUT 7
 #define ILLUM_PORT 110
 /**
 *	Доступные структуры
