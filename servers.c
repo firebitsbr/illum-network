@@ -63,7 +63,7 @@ bool illsrv_init(illsrv *srvstruct, illdb *db, FILE *errf)
 static void *illsrv_getserver(void *data)
 {
 	//printf("dfgdfddf324\n");
-	((struct srvdata *) data)->send = true;
+	((struct srvdata *) data)->get = true;
 	pthread_exit(0);
 }
 /**
@@ -75,24 +75,26 @@ static void *illsrv_sendserver(void *data)
 {
 	struct stask *ctask = (struct stask *)malloc(sizeof(struct stask));
 	struct srvdata *srvd = ((struct srvdata *) data);
-	int socket_r;
 	struct sockaddr_in server;
 	struct timeval timeout;
 	char *message;
+	int socket_r;
 
 	server.sin_port = htons(ILLUM_PORT);
 	timeout.tv_sec = SEND_TIMEOUT;
 	server.sin_family = AF_INET;
 	timeout.tv_usec = 0;
-	srvd->get = true;
+	srvd->send = true;
 
-	if (!srvd->send) {
-		fprintf(srvd->errf, "Error: Get server is down.\n");
+	if (!srvd->get) {
+		fprintf(srvd->errf, "Error: Getserver is down.\n");
 		goto exit_sendserver;
 	}
 
 	while (true) {
 		srvd->db->currenttask(ctask, srvd->errf);
+		srvd->db->removetask(ctask->id, srvd->errf);
+
 		if (!ctask->ipaddr || ctask->ipaddr == NULL || !ctask->text
 			|| ctask->text == NULL || strlen(ctask->ipaddr) < 7
 			|| strlen(ctask->text) > TEXTSIZE_SEND) {
@@ -123,12 +125,12 @@ static void *illsrv_sendserver(void *data)
 			|| send(socket_r, message, strlen(message), 0) < 0)
 			fprintf(srvd->errf, "Warring: Can't send message to %s.\n",
 					ctask->ipaddr);
-		srvd->db->removetask(ctask->id, srvd->errf);
 
 		close(socket_r);
 	}
 
 exit_sendserver:
+	free(ctask);
 	/*if (message && message != NULL)
 		free(message);*/
 	pthread_exit(0);
