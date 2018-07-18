@@ -8,16 +8,16 @@
 /**
 *	Прототипы приватных функций
 */
-static void *illsrv_sendserver(void *);
-static void *illsrv_getserver(void *);
+static void *illsrv_startserver(void *);
+static void illsrv_setnode(char *);
 /**
-*	Приватные структуры
+*	Приватные переменные
 */
-struct srvdata {
-	bool get, send;
-	illdb *db;
-	FILE *errf;
-};
+static FILE *errfile;
+static illdb *database;
+static illroute *rte;
+static struct timeval timeout;
+static int socket_r;
 /**
 *	illsrv_init - Функция инициализации потоков серверов.
 *
@@ -25,8 +25,37 @@ struct srvdata {
 *	@db - Структура управления базой данных.
 *	@errf - Файловый стрим для записи ошибок.
 */
-bool illsrv_init(illsrv *srvstruct, illdb *db, FILE *errf)
+bool illsrv_init(illsrv *srvstruct, illdb *db, illroute *route, FILE *errf)
 {
+	struct node_list *list;
+	unsigned int len = 0;
+
+	if (!srvstruct || srvstruct == NULL || !db || db == NULL ||
+		!route || route == NULL || !errf || errf == NULL)
+		return false;
+
+	list = db->nodelist(&len, errf);
+	timeout.tv_sec = SERVER_TIMEOUT;
+	timeout.tv_usec = 0;
+	errfile = errf;
+	database = db;
+	rte = route;
+
+	if (!(srvstruct->start = illsrv_startserver)) {
+		fprintf(errf, "Error: Can't create the pointer to "
+				"illsrv_startserver.\n");
+		return false;
+	}
+	if (len == 0 && !(srvstruct->setnode = illsrv_setnode)) {
+		fprintf(errf, "Error: Can't create the pointer to "
+				"illsrv_setnode.\n");
+		return false;
+	}
+	else
+		db->updnodes(list, len);
+
+	return true;
+/*
 	struct srvdata *data = (struct srvdata *)malloc(sizeof(struct srvdata));
 
 	data->send = data->get = false;
@@ -52,86 +81,77 @@ bool illsrv_init(illsrv *srvstruct, illdb *db, FILE *errf)
 		free(data);
 		return false;
 	}
-
-	return true;
+*/
 }
 /**
-*	illsrv_getserver - Функция инициализации сервера приема.
+*	illsrv_startserver - Функция инициализации сервера.
 *
 *	@data - Структура входящих параметров сервера.
 */
-static void *illsrv_getserver(void *data)
+static void *illsrv_startserver(void *data)
 {
-	//printf("dfgdfddf324\n");
-	((struct srvdata *) data)->get = true;
+
 	pthread_exit(0);
 }
 /**
-*	illsrv_sendserver - Функция инициализации сервера отправки.
+*	illsrv_setnode - Функция инициализации входящей ноды.
 *
-*	@data - Структура входящих параметров сервера.
+*	@ipaddr - Ip адрес входящей ноды.
 */
-static void *illsrv_sendserver(void *data)
+static void illsrv_setnode(char *ipaddr)
 {
-	struct stask *ctask = (struct stask *)malloc(sizeof(struct stask));
-	struct srvdata *srvd = ((struct srvdata *) data);
+	char *message, *data_r = (char *)malloc(1), recive_msg[TEXTSIZE_BUFER];
 	struct sockaddr_in server;
-	struct timeval timeout;
-	char *message;
-	int socket_r;
+	int read_s = 0, read_full = 0;
 
+	if (!ipaddr || ipaddr == NULL || strlen(ipaddr) < 7) {
+		fprintf(errfile, "Error: Invalid input data in illsrv_setnode.");
+		goto exit_setnode;
+	}
+
+	server.sin_addr.s_addr = inet_addr(ipaddr);
 	server.sin_port = htons(ILLUM_PORT);
-	timeout.tv_sec = SEND_TIMEOUT;
 	server.sin_family = AF_INET;
-	timeout.tv_usec = 0;
-	srvd->send = true;
+	message = "Here will be pointer to route module.";
 
-	if (!srvd->get) {
-		fprintf(srvd->errf, "Error: Getserver is down.\n");
-		goto exit_sendserver;
+	socket_r = socket(AF_INET, SOCK_STREAM , 0);
+	if (setsockopt(socket_r, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
+		sizeof(timeout)) < 0) {
+		fprintf(errfile, "Error: Can't set a timeout for send in "
+				"illsrv_setnode.\n");
+		goto exit_setnode;
+	}
+	if (setsockopt(socket_r, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
+		sizeof(timeout)) < 0) {
+		fprintf(errfile, "Error: Can't set a timeout for recive in "
+				"illsrv_setnode.\n");
+		goto exit_setnode;
 	}
 
-	while (true) {
-		srvd->db->currenttask(ctask, srvd->errf);
-		srvd->db->removetask(ctask->id, srvd->errf);
-
-		if (!ctask->ipaddr || ctask->ipaddr == NULL || !ctask->text
-			|| ctask->text == NULL || strlen(ctask->ipaddr) < 7
-			|| strlen(ctask->text) > TEXTSIZE_SEND) {
-			sleep(.5);
-			continue;
-		}
-		if (!srvd->send || !srvd->get) {
-			fprintf(srvd->errf, "Notice: Get and send server are down.\n");
-			goto exit_sendserver;
-		}
-
-		socket_r = socket(AF_INET, SOCK_STREAM , 0);
-		if (setsockopt(socket_r, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
-			sizeof(timeout))< 0) {
-			fprintf(srvd->errf, "Error: Can't set a timeout for "
-					"illsrv_sendserver.\n");
-			goto exit_sendserver;
-		}
-
-		memset(server.sin_zero, '\0', sizeof(server.sin_zero)); 
-		message = ctask->text;
-		if (ctask->cert && ctask->cert != NULL)
-			// message = srvd->encrypt->encode(ctask->text, ctask->cert); 
-			message = ctask->text;
-
-		server.sin_addr.s_addr = inet_addr(ctask->ipaddr);
-		if (connect(socket_r, (struct sockaddr *)&server, sizeof(server)) < 0
-			|| send(socket_r, message, strlen(message), 0) < 0)
-			fprintf(srvd->errf, "Warring: Can't send message to %s.\n",
-					ctask->ipaddr);
-
-		close(socket_r);
+	memset(server.sin_zero, '\0', sizeof(server.sin_zero)); 
+	if (connect(socket_r, (struct sockaddr *)&server, sizeof(server)) < 0
+		|| send(socket_r, message, strlen(message), 0) < 0) {
+		fprintf(errfile, "Error: Can't send message to %s.\n", ipaddr);
+		goto exit_setnode;
 	}
 
-exit_sendserver:
-	free(ctask);
-	/*if (message && message != NULL)
-		free(message);*/
-	pthread_exit(0);
+	while ((read_s = recv(socket_r, recive_msg, TEXTSIZE_BUFER, 0)) > 0) {
+		read_full += read_s;
+		if (read_full > MAXTEXTSIZE) {
+			fprintf(errfile, "Waring: Got very long message in "
+					"illsrv_setnode.\n");
+			goto exit_setnode;
+		}
+
+		data_r = (char *)realloc(data_r, read_full + 1);
+		strncat(data_r, recive_msg, read_s);
+	}
+
+	close(socket_r);
+
+	/*Decode a data and create new tasks*/
+
+exit_setnode:
+	free(message);
+	free(data_r);
 }
