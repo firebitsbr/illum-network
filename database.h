@@ -11,6 +11,9 @@
 *
 *	@mrrva - 2018
 */
+#ifndef ILL_DATABASE
+#define ILL_DATABASE
+
 #include <stdlib.h>
 #include <stdio.h>
 #include <stdbool.h>
@@ -31,11 +34,10 @@ struct stask {
 };
 
 typedef struct {
+	bool (*removetask)(), (*newnode)();
 	struct node_list *(*nodelist)();
 	void (*currenttask)();
-	bool (*removetask)();
 	char *(*setting)();
-	bool (*newnode)();
 	int (*newtask)();
 } illdb;
 /**
@@ -43,3 +45,4 @@ typedef struct {
 */
 bool illdb_init(char *, illdb *, FILE *);
 void illdb_free(illdb *);
+#endif
