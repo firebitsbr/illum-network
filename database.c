@@ -72,10 +72,8 @@ static bool illdb_removetask(unsigned int id, FILE *errf)
 
 	sprintf(sql, "UPDATE `tasks` SET `status`='1' WHERE `id`='%d';", id);
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
-	if (sqlite3_step(rs) != SQLITE_OK) {
-		fprintf(errf, "Error: Can't update status of task to `done`.\n");
+	if (sqlite3_step(rs) != SQLITE_OK)
 		goto exit_removetask;
-	}
 	status = true;
 
 exit_removetask:
@@ -143,18 +141,22 @@ static void illdb_currenttask(struct stask *data, FILE *errf)
 
 	if (!data || data == NULL) {
 		fprintf(errf, "Error: Incorrect pointer in illdb_currenttask.\n");
+		data->id = 0;
 		goto exit_currenttask;
 	}
 
 	sqlite3_prepare_v2(db, "SELECT * FROM `tasks` WHERE `status`='0' "
 		"ORDER BY `id` DESC LIMIT 1", -1, &rs, NULL);
-	if (sqlite3_step(rs) != SQLITE_ROW)
+	if (sqlite3_step(rs) != SQLITE_ROW) {
+		data->id = 0;
 		goto exit_currenttask;
+	}
 
 	for (int i = 0; i < 5; i++)
 		if (strlen((const char *)sqlite3_column_text(rs, i)) > MAX_TEXTSIZE) {
 			fprintf(errf, "Error: Value of element is very long "
-				"in illdb_currenttask\n");
+					"in illdb_currenttask\n");
+			data->id = 0;
 			goto exit_currenttask;
 		}
 
@@ -165,7 +167,7 @@ static void illdb_currenttask(struct stask *data, FILE *errf)
 
 exit_currenttask:
 	if (rs && rs != NULL)
-		sqlite3_finalize(rs);
+		sqlite3_finalize(rs); // id = 0; when was error or tasklist is empty
 }	
 /**
 *	illdb_nodelist - Функция извлекающая из базы список всех нод.
