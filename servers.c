@@ -8,8 +8,11 @@
 /**
 *	Прототипы приватных функций
 */
-static void *illsrv_startserver(void *);
+static struct threads illsrv_startservers(illsrv *);
 static void illsrv_setnode(char *);
+static void create_socket(int *);
+static void *illsrv_server();
+static void *illsrv_client();
 /**
 *	Приватные переменные
 */
@@ -17,7 +20,12 @@ static FILE *errfile;
 static illdb *database;
 static illroute *rte;
 static struct timeval timeout;
-static int socket_r;
+static bool sockflag;
+/**
+*	Приватные структуры
+*/
+
+
 /**
 *	illsrv_init - Функция инициализации потоков серверов.
 *
@@ -27,23 +35,23 @@ static int socket_r;
 */
 bool illsrv_init(illsrv *srvstruct, illdb *db, illroute *route, FILE *errf)
 {
-	struct node_list *list;
 	unsigned int len = 0;
 
 	if (!srvstruct || srvstruct == NULL || !db || db == NULL ||
 		!route || route == NULL || !errf || errf == NULL)
 		return false;
 
-	list = db->nodelist(&len, errf);
+	db->nodelist(&len, errf);
 	timeout.tv_sec = SERVER_TIMEOUT;
 	timeout.tv_usec = 0;
+	sockflag = false;
 	errfile = errf;
 	database = db;
 	rte = route;
 
-	if (!(srvstruct->start = illsrv_startserver)) {
+	if (!(srvstruct->start = illsrv_startservers)) {
 		fprintf(errf, "Error: Can't create the pointer to "
-				"illsrv_startserver.\n");
+				"illsrv_startservers.\n");
 		return false;
 	}
 	if (len == 0 && !(srvstruct->setnode = illsrv_setnode)) {
@@ -51,46 +59,87 @@ bool illsrv_init(illsrv *srvstruct, illdb *db, illroute *route, FILE *errf)
 				"illsrv_setnode.\n");
 		return false;
 	}
-	else
-		db->updnodes(list, len);
+	/*else
+		db->updnodes(list, len);*/
 
 	return true;
-/*
-	struct srvdata *data = (struct srvdata *)malloc(sizeof(struct srvdata));
-
-	data->send = data->get = false;
-	data->errf = errf;
-	data->db = db;
-
-	if (!srvstruct || srvstruct == NULL || !db || db == NULL
-		|| !errf || errf == NULL) {
-		fprintf(errf, "Error: Incorrect input data in illsrv_init\n");
-		free(data);
-		return false;
-	}
-
-	if (pthread_create(&srvstruct->getserver, NULL, illsrv_getserver,
-		data) != 0) {
-		fprintf(errf, "Error: Can't start getserver.");
-		free(data);
-		return false;
-	}
-	if (pthread_create(&srvstruct->sendserver, NULL, illsrv_sendserver,
-		data) != 0) {
-		fprintf(errf, "Error: Can't start sendserver.");
-		free(data);
-		return false;
-	}
-*/
 }
 /**
-*	illsrv_startserver - Функция инициализации сервера.
+*	illsrv_startservers - Функция инициализации сервера.
 *
-*	@data - Структура входящих параметров сервера.
+*	@srvstruct - Главная управляющая структура.
 */
-static void *illsrv_startserver(void *data)
+static struct threads illsrv_startservers(illsrv *srvstruct)
 {
+	struct threads thrds;
 
+	if (pthread_create(&thrds.server, NULL, illsrv_server, NULL) != 0)
+		fprintf(errfile, "Error: Can't start server (1).\n");
+
+	if (pthread_create(&thrds.client, NULL, illsrv_client, NULL) != 0)
+		fprintf(errfile, "Error: Can't start server (2).\n");
+
+	return thrds;
+}
+/**
+*	illsrv_server - Функция создания сокета.
+*
+*	@socket_r - Якорь сокета.
+*/
+static void create_socket(int *socket_r)
+{
+	*socket_r = socket(AF_INET, SOCK_STREAM, 0);
+
+	setsockopt(*socket_r, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
+	setsockopt(*socket_r, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout));
+	setsockopt(*socket_r, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+}
+/**
+*	illsrv_server - Функция инициализации сервера для прием
+*	данных.
+*/
+static void *illsrv_server()
+{
+	int read_s, str_size, socket_r, clnt_r;
+	struct sockaddr_in server, client;
+	char recive_msg[MAXTEXTSIZE];
+
+	str_size = sizeof(struct sockaddr_in);
+	server.sin_port = htons(ILLUM_PORT);
+	server.sin_addr.s_addr = INADDR_ANY;
+	server.sin_family = AF_INET;
+
+	for (;;) {
+		memset(server.sin_zero, '\0', sizeof(server.sin_zero));
+		memset(recive_msg, '\0', MAXTEXTSIZE);
+
+		create_socket(&socket_r);
+		if (bind(socket_r, (struct sockaddr *)&server, sizeof(server)) < 0) {
+			fprintf(errfile, "Waring: Bind(1) returned num less 0.\n");
+			goto close_socket;
+		}
+
+		listen(socket_r, 10);
+		if ((clnt_r = accept(socket_r, (struct sockaddr *)&client,
+			(socklen_t *)&str_size)) <= 0) {
+			fprintf(errfile, "Waring: Accept(1) returned num less 0.\n");
+			goto close_socket;
+		}
+
+		read_s = recv(clnt_r, recive_msg, MAXTEXTSIZE, 0);
+		printf(recive_msg);
+
+	close_socket:
+		close(socket_r);
+		close(clnt_r);
+	}
+
+	pthread_exit(0);
+}
+
+static void *illsrv_client()
+{
+	//struct sockaddr_in client = ((struct sockaddr_in) &data);
 	pthread_exit(0);
 }
 /**
@@ -103,6 +152,7 @@ static void illsrv_setnode(char *ipaddr)
 	char *message, *data_r = (char *)malloc(1), recive_msg[TEXTSIZE_BUFER];
 	struct sockaddr_in server;
 	int read_s = 0, read_full = 0;
+	int socket_r;
 
 	if (!ipaddr || ipaddr == NULL || strlen(ipaddr) < 7) {
 		fprintf(errfile, "Error: Invalid input data in illsrv_setnode.");
@@ -114,21 +164,9 @@ static void illsrv_setnode(char *ipaddr)
 	server.sin_family = AF_INET;
 	message = "Here will be pointer to route module.";
 
-	socket_r = socket(AF_INET, SOCK_STREAM , 0);
-	if (setsockopt(socket_r, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout,
-		sizeof(timeout)) < 0) {
-		fprintf(errfile, "Error: Can't set a timeout for send in "
-				"illsrv_setnode.\n");
-		goto exit_setnode;
-	}
-	if (setsockopt(socket_r, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout,
-		sizeof(timeout)) < 0) {
-		fprintf(errfile, "Error: Can't set a timeout for recive in "
-				"illsrv_setnode.\n");
-		goto exit_setnode;
-	}
-
+	create_socket(&socket_r);
 	memset(server.sin_zero, '\0', sizeof(server.sin_zero)); 
+
 	if (connect(socket_r, (struct sockaddr *)&server, sizeof(server)) < 0
 		|| send(socket_r, message, strlen(message), 0) < 0) {
 		fprintf(errfile, "Error: Can't send message to %s.\n", ipaddr);
@@ -145,6 +183,7 @@ static void illsrv_setnode(char *ipaddr)
 
 		data_r = (char *)realloc(data_r, read_full + 1);
 		strncat(data_r, recive_msg, read_s);
+		memset(recive_msg, '\0', TEXTSIZE_BUFER);
 	}
 
 	close(socket_r);
