@@ -9,8 +9,9 @@
 *	Прототипы приватных функций
 */
 static struct threads illsrv_startservers(illsrv *);
+static void illsrv_closesocket(int *, ...);
+static void illsrv_createsocket(int *);
 static void illsrv_setnode(char *);
-static void create_socket(int *);
 static void *illsrv_server();
 static void *illsrv_client();
 /**
@@ -19,7 +20,7 @@ static void *illsrv_client();
 static FILE *errfile;
 static illdb *database;
 static illroute *rte;
-static struct timeval timeout;
+static struct timeval tout;
 static bool sockflag;
 /**
 *	Приватные структуры
@@ -42,8 +43,8 @@ bool illsrv_init(illsrv *srvstruct, illdb *db, illroute *route, FILE *errf)
 		return false;
 
 	db->nodelist(&len, errf);
-	timeout.tv_sec = SERVER_TIMEOUT;
-	timeout.tv_usec = 0;
+	tout.tv_sec = SERVER_TIMEOUT;
+	tout.tv_usec = 0;
 	sockflag = false;
 	errfile = errf;
 	database = db;
@@ -82,17 +83,36 @@ static struct threads illsrv_startservers(illsrv *srvstruct)
 	return thrds;
 }
 /**
-*	illsrv_server - Функция создания сокета.
+*	illsrv_createsocket - Функция создания сокета.
 *
-*	@socket_r - Якорь сокета.
+*	@soc - Якорь сокета.
 */
-static void create_socket(int *socket_r)
+static void illsrv_createsocket(int *soc)
 {
-	*socket_r = socket(AF_INET, SOCK_STREAM, 0);
+	*soc = socket(AF_INET, SOCK_STREAM, 0);
 
-	setsockopt(*socket_r, SOL_SOCKET, SO_RCVTIMEO, (char *)&timeout, sizeof(timeout));
-	setsockopt(*socket_r, SOL_SOCKET, SO_SNDTIMEO, (char *)&timeout, sizeof(timeout));
-	setsockopt(*socket_r, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+	setsockopt(*soc, SOL_SOCKET, SO_RCVTIMEO, (char *)&tout, sizeof(tout));
+	setsockopt(*soc, SOL_SOCKET, SO_SNDTIMEO, (char *)&tout, sizeof(tout));
+	setsockopt(*soc, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+}
+/**
+*	illsrv_closesocket - Функция закрытия сокета.
+*
+*	@length - Количество переменных.
+*	@... - Входящие аргументы.
+*/
+static void illsrv_closesocket(int *length, ...)
+{
+	int *var;
+	va_list ap;
+	va_start(ap, length);
+
+	for (int i = 0; i < *length; i++) {
+		var = va_arg(ap, int *);
+		shutdown(*var, SHUT_RDWR);
+		close(*var);
+	}
+	va_end(ap);
 }
 /**
 *	illsrv_server - Функция инициализации сервера для прием
@@ -100,38 +120,37 @@ static void create_socket(int *socket_r)
 */
 static void *illsrv_server()
 {
-	int read_s, str_size, socket_r, clnt_r;
+	int mlength, strsize, socket_r, clnt_r;
 	struct sockaddr_in server, client;
-	char recive_msg[MAXTEXTSIZE];
+	char message[MAXTEXTSIZE];
 
-	str_size = sizeof(struct sockaddr_in);
+	strsize = sizeof(struct sockaddr_in);
 	server.sin_port = htons(ILLUM_PORT);
 	server.sin_addr.s_addr = INADDR_ANY;
 	server.sin_family = AF_INET;
 
 	for (;;) {
 		memset(server.sin_zero, '\0', sizeof(server.sin_zero));
-		memset(recive_msg, '\0', MAXTEXTSIZE);
+		memset(message, '\0', MAXTEXTSIZE);
+		illsrv_createsocket(&socket_r);
 
-		create_socket(&socket_r);
-		if (bind(socket_r, (struct sockaddr *)&server, sizeof(server)) < 0) {
-			fprintf(errfile, "Waring: Bind(1) returned num less 0.\n");
-			goto close_socket;
+		if (bind(socket_r, (struct sockaddr *)&server,
+				sizeof(server)) < 0) {
+			fprintf(errfile, "Waring: Bind() returned num less 0.\n");
+			illsrv_closesocket(&(int){1}, &socket_r);
 		}
 
 		listen(socket_r, 10);
 		if ((clnt_r = accept(socket_r, (struct sockaddr *)&client,
-			(socklen_t *)&str_size)) <= 0) {
-			fprintf(errfile, "Waring: Accept(1) returned num less 0.\n");
-			goto close_socket;
+							(socklen_t *)&strsize)) <= 0) {
+			fprintf(errfile, "Waring: Accept() returned num less 0.\n");
+			illsrv_closesocket(&(int){2}, &socket_r, &clnt_r);
 		}
 
-		read_s = recv(clnt_r, recive_msg, MAXTEXTSIZE, 0);
-		printf(recive_msg);
+		mlength = recv(clnt_r, message, MAXTEXTSIZE, 0);
+		illsrv_closesocket(&(int){2}, &socket_r, &clnt_r);
 
-	close_socket:
-		close(socket_r);
-		close(clnt_r);
+		printf(message);
 	}
 
 	pthread_exit(0);
@@ -164,7 +183,7 @@ static void illsrv_setnode(char *ipaddr)
 	server.sin_family = AF_INET;
 	message = "Here will be pointer to route module.";
 
-	create_socket(&socket_r);
+	illsrv_createsocket(&socket_r);
 	memset(server.sin_zero, '\0', sizeof(server.sin_zero)); 
 
 	if (connect(socket_r, (struct sockaddr *)&server, sizeof(server)) < 0
@@ -174,8 +193,7 @@ static void illsrv_setnode(char *ipaddr)
 	}
 
 	while ((read_s = recv(socket_r, recive_msg, TEXTSIZE_BUFER, 0)) > 0) {
-		read_full += read_s;
-		if (read_full > MAXTEXTSIZE) {
+		if ((read_full += read_s) > MAXTEXTSIZE) {
 			fprintf(errfile, "Waring: Got very long message in "
 					"illsrv_setnode.\n");
 			goto exit_setnode;
