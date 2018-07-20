@@ -21,12 +21,6 @@ static FILE *errfile;
 static illdb *database;
 static illroute *rte;
 static struct timeval tout;
-static bool sockflag;
-/**
-*	Приватные структуры
-*/
-
-
 /**
 *	illsrv_init - Функция инициализации потоков серверов.
 *
@@ -38,14 +32,13 @@ bool illsrv_init(illsrv *srvstruct, illdb *db, illroute *route, FILE *errf)
 {
 	unsigned int len = 0;
 
-	if (!srvstruct || srvstruct == NULL || !db || db == NULL ||
-		!route || route == NULL || !errf || errf == NULL)
+	if (!srvstruct || srvstruct == NULL || !db || db == NULL
+		|| !route || route == NULL || !errf || errf == NULL)
 		return false;
 
 	db->nodelist(&len, errf);
 	tout.tv_sec = SERVER_TIMEOUT;
 	tout.tv_usec = 0;
-	sockflag = false;
 	errfile = errf;
 	database = db;
 	rte = route;
@@ -89,11 +82,13 @@ static struct threads illsrv_startservers(illsrv *srvstruct)
 */
 static void illsrv_createsocket(int *soc)
 {
+	int sc = SOL_SOCKET, times = sizeof(tout);
+	char *timeo = (char *)&tout;
 	*soc = socket(AF_INET, SOCK_STREAM, 0);
 
-	setsockopt(*soc, SOL_SOCKET, SO_RCVTIMEO, (char *)&tout, sizeof(tout));
-	setsockopt(*soc, SOL_SOCKET, SO_SNDTIMEO, (char *)&tout, sizeof(tout));
-	setsockopt(*soc, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int));
+	setsockopt(*soc, sc, SO_RCVTIMEO, timeo, times);
+	setsockopt(*soc, sc, SO_SNDTIMEO, timeo, times);
+	setsockopt(*soc, sc, SO_REUSEADDR, &(int){1}, sizeof(int));
 }
 /**
 *	illsrv_closesocket - Функция закрытия сокета.
@@ -120,11 +115,11 @@ static void illsrv_closesocket(int *length, ...)
 */
 static void *illsrv_server()
 {
-	int mlength, strsize, socket_r, clnt_r;
+	int mlength, socsize, socket_r, clnt_r;
 	struct sockaddr_in server, client;
 	char message[MAXTEXTSIZE];
 
-	strsize = sizeof(struct sockaddr_in);
+	socsize = sizeof(struct sockaddr_in);
 	server.sin_port = htons(ILLUM_PORT);
 	server.sin_addr.s_addr = INADDR_ANY;
 	server.sin_family = AF_INET;
@@ -142,7 +137,7 @@ static void *illsrv_server()
 
 		listen(socket_r, 10);
 		if ((clnt_r = accept(socket_r, (struct sockaddr *)&client,
-							(socklen_t *)&strsize)) <= 0) {
+							(socklen_t *)&socsize)) <= 0) {
 			fprintf(errfile, "Waring: Accept() returned num less 0.\n");
 			illsrv_closesocket(&(int){2}, &socket_r, &clnt_r);
 		}
@@ -155,7 +150,10 @@ static void *illsrv_server()
 
 	pthread_exit(0);
 }
-
+/**
+*	illsrv_client - Функция инициализации сервера для отправки
+*	данных.
+*/
 static void *illsrv_client()
 {
 	//struct sockaddr_in client = ((struct sockaddr_in) &data);
@@ -168,10 +166,9 @@ static void *illsrv_client()
 */
 static void illsrv_setnode(char *ipaddr)
 {
-	char *message, *data_r = (char *)malloc(1), recive_msg[TEXTSIZE_BUFER];
+	char *message, recive_msg[MAXTEXTSIZE];
 	struct sockaddr_in server;
-	int read_s = 0, read_full = 0;
-	int socket_r;
+	int mlength = 0, socket_r;
 
 	if (!ipaddr || ipaddr == NULL || strlen(ipaddr) < 7) {
 		fprintf(errfile, "Error: Invalid input data in illsrv_setnode.");
@@ -192,23 +189,12 @@ static void illsrv_setnode(char *ipaddr)
 		goto exit_setnode;
 	}
 
-	while ((read_s = recv(socket_r, recive_msg, TEXTSIZE_BUFER, 0)) > 0) {
-		if ((read_full += read_s) > MAXTEXTSIZE) {
-			fprintf(errfile, "Waring: Got very long message in "
-					"illsrv_setnode.\n");
-			goto exit_setnode;
-		}
-
-		data_r = (char *)realloc(data_r, read_full + 1);
-		strncat(data_r, recive_msg, read_s);
-		memset(recive_msg, '\0', TEXTSIZE_BUFER);
-	}
-
-	close(socket_r);
+	mlength = recv(socket_r, recive_msg, MAXTEXTSIZE, 0);
+	illsrv_closesocket(&(int){1}, &socket_r);
+	printf(recive_msg);
 
 	/*Decode a data and create new tasks*/
 
 exit_setnode:
 	free(message);
-	free(data_r);
 }
