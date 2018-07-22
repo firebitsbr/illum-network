@@ -172,19 +172,20 @@ static void *illsrv_client()
 		if (sockflag || !task.ipaddr || task.id == 0)
 			continue;
 
-		memset(client.sin_zero, '\0', sizeof(client.sin_zero));
 		message = task.text;
 		if (task.cert && task.cert != NULL)
-			/* message = enc->encrypt(task.text, task.cert); */
-			message = task.text;
+			// message = enc->encrypt(task.text, task.cert);
+			printf("Hah, lol\n");
 
 		database->removetask(task.id);
 		illsrv_createsocket(&socket_r);
 		client.sin_addr.s_addr = inet_addr(task.ipaddr);
+		memset(client.sin_zero, '\0', sizeof(client.sin_zero));
 
 		if (connect(socket_r, (struct sockaddr *)&client, sizeof(client)) < 0
 			|| send(socket_r, message, strlen(message), 0) < 0)
-			fprintf(errfile, "Error: Can't send message to %s\n", task.ipaddr);
+			fprintf(errfile, "Error: Can't send message (client).\n");
+
 		illsrv_closesocket(&(int){1}, &socket_r);
 	}
 
@@ -216,7 +217,7 @@ static void illsrv_setnode(char *ipaddr)
 
 	if (connect(socket_r, (struct sockaddr *)&server, sizeof(server)) < 0
 		|| send(socket_r, message, strlen(message), 0) < 0) {
-		fprintf(errfile, "Error: Can't send message to %s.\n", ipaddr);
+		fprintf(errfile, "Error: Can't send message (setnode).\n");
 		goto exit_setnode;
 	}
 
