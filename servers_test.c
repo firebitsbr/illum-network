@@ -4,10 +4,11 @@
 int main()
 {
 	illdb db;
-	illroute router;
 	illsrv srv;
-	FILE *fp = fopen("./log.txt", "a+");
+	illroute router;
+	char ipaddr[20];
 	struct threads thrds;
+	FILE *fp = fopen("./log.txt", "a+");
 
 	/* Init illdb */
 	if (!illdb_init("./illum.db", &db, fp)) {
@@ -23,7 +24,13 @@ int main()
 
 	thrds = srv.start(srv);
 
+	/* You can send a text to some ip */
+	printf("Ip addr: ");
+	scanf("%s", ipaddr);
+
+	db.newtask(ipaddr, "", "This is teswt task!", fp);
 	pthread_join(thrds.server, 0);
+	pthread_join(thrds.client, 0);
 
 	return 0;
 }
