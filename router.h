@@ -15,14 +15,16 @@
 /**
 *	Доступные структуры
 */
-typedef enum {
-	/* System headers */
+enum illheader {
+	ILL_NEWNODE = 0, ILL_PING = 1, ILL_STAT = 2,
+	ILL_STRAIGHT = 10, ILL_ONION = 11
+/*
 	ILLH_FREENODES = 0, ILLH_UPDNODES = 1,
 	ILLH_MESSAGE = 2, ILLH_PING = 3,
-	/* Types of messange */
 	ILLH_ONION = 10, ILLH_STRAIGHT = 11,
 	ILL_STAT = 12
-} illheader;
+*/
+};
 
 typedef struct {
 	void (*read)(), (*new)();
