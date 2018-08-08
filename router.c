@@ -5,7 +5,7 @@
 *	@mrrva - 2018
 */
 #include "./router.h"
-#define FUNNULL 99
+#define FUNCNULL 99
 /**
 *	Приватные структуры
 */
@@ -32,6 +32,8 @@ struct functions {
 /**
 *	Прототипы приватных функций
 */
+static bool illrouter_mkclearhdr(struct node_list *, unsigned int,
+	char *,char *, enum illheader);
 static bool illrouter_clearmsg(json_object *, struct clearhdr *);
 static void illrouter_befriends(json_object *);
 static void illrouter_newroute(enum illheader);
@@ -45,6 +47,7 @@ static void illrouter_readroute(char *);
 *	Приватные переменные
 */
 static FILE *errfile;
+static illdb *db;
 /**
 *	illrouter_init - Функция инициализации модуля
 *	построения маршрута.
@@ -52,9 +55,9 @@ static FILE *errfile;
 *	@illr - Главная управляющая структура.
 *	@errf - Файловый стрим для записи ошибок.
 */
-bool illrouter_init(illrouter *illr, FILE *errf)
+bool illrouter_init(illrouter *illr, illdb *database, FILE *errf)
 {
-	if (!(errfile = errf) || errfile == NULL)
+	if (!(errfile = errf) || !(db = database) || errfile == NULL)
 		return false;
 
 	illr->read = illrouter_readroute;
@@ -80,11 +83,10 @@ static void illrouter_readroute(char *json)
 		{ILL_PING, illrouter_ping},
 		{ILL_STAT, illrouter_stat},
 	};
-	unsigned int type = FUNNULL, i;
+	unsigned int type = FUNCNULL, i;
 	json_object *jobj;
 
-	if (!(jobj = json_tokener_parse(json))
-		|| !json || json == NULL) {
+	if (!(jobj = json_tokener_parse(json))) {
 		fprintf(errfile, "Error: Invalid json string.\n");
 		goto exit_create;
 	}
@@ -105,7 +107,7 @@ static void illrouter_readroute(char *json)
 				}
 	}
 
-	if (type != FUNNULL && func[type].name
+	if (type != FUNCNULL && func[type].name
 		&& func[type].name != NULL)
 		func[type].name(jobj);
 
@@ -164,6 +166,36 @@ static bool illrouter_clearmsg(json_object *jobj,
 	return status;
 }
 /**
+*	illrouter_resend - Функция переотправки сообщений известным
+*	нодам из базы данных.
+*
+*	@list - Список устройств для отправки.
+*	@len - Количество устройств отправки.
+*	@jobj - Заголовки для отправки.
+*/
+static bool illrouter_resend(struct node_list *list,
+	unsigned int len, json_object *jobj)
+{
+	char *headers;
+
+	if (!list || list == NULL || len < 0 || !jobj
+		|| jobj == NULL) {
+		fprintf(errfile, "Error: Invalid input data in resend.\n");
+		return false;
+	}
+	if (!(headers = json_object_to_json_string(jobj))) {
+		fprintf(errfile, "Error: Invalid json string in 
+				resend.\n");
+		return false;
+	}
+
+	for (int i = 0; i < len; i++) {
+		//db->
+	}
+
+	return true;
+}
+/**
 *	illrouter_newnode - Функция создания маршрута получения
 *	нод с неполным стеком подключений.
 *
@@ -171,7 +203,9 @@ static bool illrouter_clearmsg(json_object *jobj,
 */
 static void illrouter_newnode(json_object *jobj)
 {
+	struct node_list *list, own;
 	struct clearhdr msg;
+	unsigned int len;
 
 	if (!jobj || jobj == NULL) {
 		fprintf(errfile, "Warring: Invalid json object(1).\n");
@@ -182,7 +216,18 @@ static void illrouter_newnode(json_object *jobj)
 		return;
 	}
 
-	/* Смотрим кол-во наших нод и отправляем запрос дальше */
+	list = db->nodelist(&len, errfile);
+	if (!list || list == NULL) {
+		fprintf(errfile, "Error: Can't exec nodelist func.\n");
+		return;
+	}
+	else if (len < MAXNODES) {
+		own.
+		/* i have less nodes than i need, send request */
+	}
+
+
+	/* send request to next nodes */
 }
 /**
 *	illrouter_newnode - Функция создания маршрута для
@@ -253,5 +298,88 @@ static void illrouter_straight(json_object *jobj)
 */
 static void illrouter_onion(json_object *jobj)
 {
+
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* FUNCTIONS, WHICH WILL BE USED IN THE FUTURE */
+
+
+/**
+*	illrouter_mkclearhdr - Функция создания заголовков
+*	незашифрованных сообщений.
+*
+*	@list - Список получателей.
+*	@len - Количество получателей.
+*	@ipaddr - Ip отправителя
+*	@hash - Хэш отправителя.
+*	@type - Тип сообщения.
+*/
+static bool illrouter_mkclearhdr(struct node_list *list,
+	unsigned int len, char *ipaddr, char *hash,
+	enum illheader type)
+{
+	char *json;
+
+	if (!list || list == NULL || len < 1 || !ipaddr || strlen(ipaddr) < 7
+		|| !hash || strlen(hash) < 10) {
+		fprintf(errfile, "Error: Incorrect input data in mkclearhdr\n");
+		return false;
+	}
+	if (type != ILL_NEWNODE && type != ILL_PING && type != ILL_STAT
+		&& type != ILL_BEFRIENDS) {
+		fprintf(errfile, "Error: Incorrect type of message.\n");
+		return false;
+	}
+
+	for (int i = 0; i < len; i++) {
+		if (!list[i].ipaddr || !list[i].hash || strlen(list[i].ipaddr) < 7
+			|| strlen(list[i].hash) < 10) {
+			fprintf(errfile, "Error: Input value is incorrect in mkclearhdr\n");
+		}
+
+		json_object *jobj = json_object_new_object();
+
+		json_object_object_add(jobj, "type", json_object_new_int(type));
+		json_object_object_add(jobj, "", json_object_new_string());
+
+		json_object_put(jobj);
+	}
+
+
+	jobj = json_object_new_object();
+	/*
+		json_object *node = json_object_new_object(), *main = json_object_new_object();
+	// Создаем json массив
+	json_object_object_add(node, "hash", json_object_new_string(illum->user->certhash));
+	json_object_object_add(node, "public_key", json_object_new_string(illum->user->public_cert));
+	json_object_object_add(main, "node", node);
+	json_object_object_add(main, "type", json_object_new_int(type));
+	json_object_object_add(main, "text", json_object_new_string(text));
+	// Возвращаем json строку
+	return json_object_to_json_string(main);
+	*/
 
 }
