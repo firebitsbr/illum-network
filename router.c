@@ -5,6 +5,7 @@
 *	@mrrva - 2018
 */
 #include "./router.h"
+#define FUNNULL 99
 /**
 *	Приватные структуры
 */
@@ -14,14 +15,14 @@ struct onion {
 
 struct enchdr {
 	unsigned int type, nodesnum;
-	struct onion onion;
 	char *ipaddr, *hash;
+	struct onion onion;
 	bool is_onion;
 };
 
 struct clearhdr {
+	unsigned int type, nodesnum;
 	char *ipaddr, *hash, *cert;
-	unsigned int type;
 };
 
 struct functions {
@@ -32,6 +33,7 @@ struct functions {
 *	Прототипы приватных функций
 */
 static bool illrouter_clearmsg(json_object *, struct clearhdr *);
+static void illrouter_befriends(json_object *);
 static void illrouter_newroute(enum illheader);
 static void illrouter_straight(json_object *);
 static void illrouter_newnode(json_object *);
@@ -71,13 +73,14 @@ bool illrouter_init(illrouter *illr, FILE *errf)
 static void illrouter_readroute(char *json)
 {
 	struct functions func[] = {
-		{10, illrouter_straight},
-		{0, illrouter_newnode},
-		{11, illrouter_onion},
-		{1, illrouter_ping},
-		{2, illrouter_stat}
+		{ILL_BEFRIENDS, illrouter_befriends},
+		{ILL_STRAIGHT, illrouter_straight},
+		{ILL_NEWNODE, illrouter_newnode},
+		{ILL_ONION, illrouter_onion},
+		{ILL_PING, illrouter_ping},
+		{ILL_STAT, illrouter_stat},
 	};
-	unsigned int type = -1, i;
+	unsigned int type = FUNNULL, i;
 	json_object *jobj;
 
 	if (!(jobj = json_tokener_parse(json))
@@ -101,7 +104,10 @@ static void illrouter_readroute(char *json)
 					break;
 				}
 	}
-	func[type].name(jobj);
+
+	if (type != FUNNULL && func[type].name
+		&& func[type].name != NULL)
+		func[type].name(jobj);
 
 exit_create:
 	if (jobj && jobj != NULL)
@@ -141,6 +147,8 @@ static bool illrouter_clearmsg(json_object *jobj,
 
 		if (strcmp(key, "ipaddr") == 0)
 			msg->ipaddr = json_object_get_string(value);
+		else if (strcmp(key, "nodesnum") == 0)
+			msg->nodesnum = json_object_get_int(value);
 		else if (strcmp(key, "hash") == 0)
 			msg->hash = json_object_get_string(value);
 		else if (strcmp(key, "cert") == 0)
@@ -150,7 +158,7 @@ static bool illrouter_clearmsg(json_object *jobj,
 	}
 
 	if (msg->ipaddr && msg->ipaddr && msg->ipaddr
-		&& msg->type > -1)
+		&& msg->type > -1 && msg->nodesnum > -1)
 		status = true;
 
 	return status;
@@ -166,11 +174,15 @@ static void illrouter_newnode(json_object *jobj)
 	struct clearhdr msg;
 
 	if (!jobj || jobj == NULL) {
-		fprintf(errfile, "Error: Invalid json object(1).\n");
+		fprintf(errfile, "Warring: Invalid json object(1).\n");
+		return;
+	}
+	if (!illrouter_clearmsg(jobj, &msg)) {
+		fprintf(errfile, "Warring: Can't decode json(1).\n");
 		return;
 	}
 
-	illrouter_clearmsg(jobj, &msg);
+	/* Смотрим кол-во наших нод и отправляем запрос дальше */
 }
 /**
 *	illrouter_newnode - Функция создания маршрута для
@@ -201,6 +213,23 @@ static void illrouter_stat(json_object *jobj)
 	
 	if (!jobj || jobj == NULL) {
 		fprintf(errfile, "Error: Invalid json object(3).\n");
+		return;
+	}
+
+	illrouter_clearmsg(jobj, &msg);
+}
+/**
+*	illrouter_befriends - Функция создания маршрута для
+*	подтверждения статической связи между нодами.
+*
+*	@jobj - Json объект маршрута.
+*/
+static void illrouter_befriends(json_object *jobj)
+{
+	struct clearhdr msg;
+	
+	if (!jobj || jobj == NULL) {
+		fprintf(errfile, "Error: Invalid json object(4).\n");
 		return;
 	}
 
