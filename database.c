@@ -8,12 +8,14 @@
 /**
 *	Прототипы приватных функций
 */
-static bool	illdb_newnode(char *, char *, unsigned int, char *, char *, FILE *);
-static int	illdb_settask(char *, char *, char *, FILE *);
+static bool	illdb_newnode(char *, char *, unsigned int, char *, FILE *);
+static int	illdb_settask(char *, char *, char *, char *, FILE *);
 struct node_list *illdb_nodelist(unsigned int *, FILE *);
-static bool	illdb_removetask(unsigned int, FILE *);
 static void illdb_currenttask(struct stask *, FILE *);
+static bool	illdb_removetask(unsigned int, FILE *);
+static int	illdb_nodenum(FILE *);
 static bool	illdb_tables(FILE *);
+static void illdb_removecache();
 /**
 *	Глобальные переменные
 */
@@ -28,27 +30,34 @@ static sqlite3 *db;
 */
 bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
 {
-	bool status = false;
 	int st_sqlite3 = -100;
+	bool status = false;
 
 	if (!dbpath || strlen(dbpath) < 8 || !dbstruct || !errf) {
 		printf("Error: Input params in illdb_init are incorrect.\n");
 		return status;
 	}
-	if ((st_sqlite3 = sqlite3_open(dbpath, &db)) != SQLITE_OK || !illdb_tables(errf)) {
+	if ((st_sqlite3 = sqlite3_open(dbpath, &db)) != SQLITE_OK
+		|| !illdb_tables(errf)) {
 		if (st_sqlite3 != SQLITE_OK)
 			fprintf(errf, "Can't open database: %s\n", sqlite3_errmsg(db));
 		return status;
 	}
 
 	dbstruct->currenttask = illdb_currenttask;
+	dbstruct->staticnode = illdb_staticnode;
 	dbstruct->removetask = illdb_removetask;
 	dbstruct->nodelist = illdb_nodelist;
 	dbstruct->newtask = illdb_settask;
 	dbstruct->newnode = illdb_newnode;
+	dbstruct->nodenum = illdb_nodenum;
 
-	if (dbstruct->removetask && dbstruct->nodelist && dbstruct->newtask 
-		&& dbstruct->newnode && dbstruct->currenttask)
+	illdb_removecache();
+
+	if (dbstruct->removetask && dbstruct->nodelist
+		&& dbstruct->newtask && dbstruct->newnode
+		&& dbstruct->currenttask && dbstruct->nodenum
+		&& dbstruct->staticnode)
 		status = true;
 
 	return status;
@@ -83,17 +92,33 @@ exit_removetask:
 	return status;
 }
 /**
+*	illdb_removecache - Функция удаления лишних записей из базы.
+*/
+static void illdb_removecache()
+{
+	sqlite3_stmt *rs = NULL;
+
+	sqlite3_prepare_v2(db, "DELETE FROM `onion`", -1, &rs, NULL);
+	sqlite3_step(rs);
+	sqlite3_prepare_v2(db, "DELETE FROM `nodes` WHERE `status`='0'",
+		-1, &rs, NULL);
+	sqlite3_step(rs);
+
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+}
+/**
 *	illdb_newnode - Функция занесения новой ноды в базу данных.
 *
 *	@ipaddr - Ip адрес получателя сообщения.
 *	@hash - Ключ ноды для распознования в сети.
 *	@cert - Публичный сертификат получателя сообщения.
 *	@text - Текст сообщения.
+*	@mseconds - Время отклика узла.
 *	@errf - Файловый стрим для записи ошибок.
 */
 static bool illdb_newnode(char *ipaddr, char *hash,
-	unsigned int mseconds, char *about, char *cert,
-	FILE *errf)
+	unsigned int mseconds, char *cert, FILE *errf)
 {
 	sqlite3_stmt *rs = NULL;
 	unsigned int length = 0;
@@ -101,20 +126,19 @@ static bool illdb_newnode(char *ipaddr, char *hash,
 	char *sql;
 
 	if (!ipaddr || strlen(ipaddr) < 7 || !hash || strlen(hash) < 10
-		|| mseconds < 0 || !about || strlen(about) < 50 || !cert
-		|| strlen(cert) < 100) {
+		|| mseconds < 0 || !cert || strlen(cert) < 100) {
 		fprintf(errf, "Error: Incorrect input data in illdb_settask.\n");
 		return status;
 	}
 
-	if ((length = strlen(ipaddr) + strlen(hash)+ strlen(about)
-		+ strlen(cert)) > MAX_TEXTSIZE) {
+	if ((length = strlen(ipaddr) + strlen(hash) + strlen(cert))
+		> MAX_TEXTSIZE) {
 		fprintf(errf, "Error: Text size for task more than you can write.\n");
 		goto exit_newnode;
 	}
 	sql = (char *)malloc(length + 100);
-	sprintf(sql, "INSERT INTO `nodes` VALUES (NULL, '%s', '%s', '%i', '%s', '%s');",
-			ipaddr, hash, mseconds, about, cert);
+	sprintf(sql, "INSERT INTO `nodes` VALUES (NULL, '%s', '%s', '%i', '%s', 0);",
+			ipaddr, hash, mseconds, cert);
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Can't set new node to database.\n");
@@ -161,8 +185,9 @@ static void illdb_currenttask(struct stask *data, FILE *errf)
 		}
 
 	data->id = (unsigned int)atoi((const char *)sqlite3_column_text(rs, 0));
-	data->cert = (char *)sqlite3_column_text(rs, 2);
+	data->headers = (char *)sqlite3_column_text(rs, 4);
 	data->ipaddr = (char *)sqlite3_column_text(rs, 1);
+	data->cert = (char *)sqlite3_column_text(rs, 2);
 	data->text = (char *)sqlite3_column_text(rs, 3);
 
 exit_currenttask:
@@ -181,7 +206,7 @@ struct node_list *illdb_nodelist(unsigned int *num, FILE *errf)
 	sqlite3_stmt *rs = NULL;
 	unsigned int length = 0;
 
-	sqlite3_prepare_v2(db, "SELECT * FROM `nodes`", -1, &rs, NULL);
+	sqlite3_prepare_v2(db, "SELECT * FROM `nodes` WHERE `status`='1'", -1, &rs, NULL);
 	while (length++, sqlite3_step(rs) == SQLITE_ROW) {
 		data = (struct node_list *)realloc(data, sizeof(struct node_list) * length + 1);
 		for (int i = 0; i < 6; i++)
@@ -195,7 +220,6 @@ struct node_list *illdb_nodelist(unsigned int *num, FILE *errf)
 		data[length - 1].ipaddr = (char *)sqlite3_column_text(rs, 1);
 		data[length - 1].hash = (char *)sqlite3_column_text(rs, 2);
 		data[length - 1].cert = (char *)sqlite3_column_text(rs, 5);
-		data[length - 1].about = (char *)sqlite3_column_text(rs, 4);
 	}
 	(*num) = length - 1;
 
@@ -210,30 +234,36 @@ exit_nodelist:
 *	@ipaddr - Ip адрес получателя сообщения.
 *	@cert - Публичный сертификат получателя сообщения.
 *	@text - Текст сообщения.
+*	@headers - Заголовки к сообщению.
 *	@errf - Файловый стрим для записи ошибок.
 */
-static int illdb_settask(char *ipaddr, char *cert, char *text, FILE *errf)
+static int illdb_settask(char *ipaddr, char *cert, char *text,
+	char *headers,  FILE *errf)
 {
 	sqlite3_stmt *rs = NULL;
 	unsigned int length = 0;
 	int id = -1;
 	char *sql;
 
-	if (!ipaddr || strlen(ipaddr) < 7 || !text || strlen(text) < 10) {
+	if (!ipaddr || strlen(ipaddr) < 7 || !headers || strlen(headers) < 10) {
 		fprintf(errf, "Error: Incorrect input data in illdb_settask.\n");
 		return id;
 	}
 
 	if (cert && cert != NULL)
 		length += strlen(cert);
-	if ((length += strlen(ipaddr) + strlen(text)) > MAX_TEXTSIZE) {
+	if (text && text != NULL)
+		length += strlen(text);
+	if ((length += strlen(ipaddr) + strlen(headers)) > MAX_TEXTSIZE) {
 		fprintf(errf, "Error: Text size for task more then you can write.\n");
 		return id;
 	}
 	
 	sql = (char *)malloc(length + 100);
-	sprintf(sql, "INSERT INTO `tasks` VALUES (NULL, '%s', '%s', '%s', 0);", ipaddr,
-			((!cert || cert == NULL) ? "" : cert), text);
+	sprintf(sql, "INSERT INTO `tasks` VALUES (NULL, '%s', '%s', '%s', '%s', 0);",
+		ipaddr, ((!cert || cert == NULL) ? "" : cert),
+		((!text || text == NULL) ? "" : text), headers);
+
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Can't create new task.\n");
@@ -249,6 +279,29 @@ exit_settask:
 	return id; /* -1 is error */
 }
 /**
+*	illdb_nodenum - Функция подсчета количества нод.
+*
+*	@errf - Файловый стрим для записи ошибок.
+*/
+static int illdb_nodenum(FILE *errf)
+{
+	sqlite3_stmt *rs = NULL;
+	int number = 0;
+
+	sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM `nodes` WHERE `status`='1'",
+		-1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_DONE) {
+		fprintf(errf, "Error: Can't select number of nodes\n");
+		goto exit_nodenum;
+	}
+	number = atoi((const char *)sqlite3_column_text(rs, 0));
+
+exit_nodenum:
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	return number;
+}
+/**
 *	illdb_tables - Функция создания базы данных проекта.
 *
 *	@errf - Файловый стрим для записи ошибок.
@@ -260,8 +313,8 @@ static bool illdb_tables(FILE *errf)
 
 	sqlite3_prepare_v2(db, "CREATE TABLE IF NOT EXISTS `tasks` ("
 	"`id` INTEGER PRIMARY KEY AUTOINCREMENT, `ip` text NOT NULL,"
-	"`cert` text, `text` text NOT NULL, `status` int(11) NOT NULL DEFAULT 0);",
-	-1, &rs, NULL);
+	"`cert` text, `text` text, `headers` text NOT NULL, `status`" 
+	"int(11) NOT NULL DEFAULT 0);", -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Sqlite can't create tasks table.\n");
 		goto exit_tables;
@@ -275,8 +328,8 @@ static bool illdb_tables(FILE *errf)
 	}
 	sqlite3_prepare_v2(db, "CREATE TABLE IF NOT EXISTS `nodes` ("
 	"`id` INTEGER PRIMARY KEY AUTOINCREMENT, `ip` text NOT NULL,"
-	"`hash` text NOT NULL, `mseconds` int(11) NOT NULL,"
-	"`about` text NOT NULL, `cert` text NOT NULL);", -1, &rs, NULL);
+	"`hash` text NOT NULL, `mseconds` int(11) NOT NULL, `cert` text"
+	"NOT NULL, `status` int(11) NOT NULL DEFAULT 0);", -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Sqlite can't create nodes table.\n");
 		goto exit_tables;
@@ -285,6 +338,13 @@ static bool illdb_tables(FILE *errf)
 	"`name` text NOT NULL, `value` text NOT NULL);", -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Sqlite can't create settings table.\n");
+		goto exit_tables;
+	}
+	sqlite3_prepare_v2(db, "CREATE TABLE IF NOT EXISTS `onion` ("
+	"`hash` text NOT NULL, `from` text NOT NULL, `to` text NOT NULL);",
+	-1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_DONE) {
+		fprintf(errf, "Error: Sqlite can't create onion table.\n");
 		goto exit_tables;
 	}
 	status = true;
