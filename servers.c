@@ -19,9 +19,9 @@ static void *illsrv_client();
 */
 static struct timeval tout;
 static illdb *database;
+static illrouter *rte;
 static bool sockflag;
 static FILE *errfile;
-static illroute *rte;
 /**
 *	illsrv_init - Функция инициализации потоков серверов.
 *
@@ -29,7 +29,7 @@ static illroute *rte;
 *	@db - Структура управления базой данных.
 *	@errf - Файловый стрим для записи ошибок.
 */
-bool illsrv_init(illsrv *srvstruct, illdb *db, illroute *route, FILE *errf)
+bool illsrv_init(illsrv *srvstruct, illdb *db, illrouter *route, FILE *errf)
 {
 	unsigned int len = 0;
 
@@ -117,9 +117,9 @@ static void illsrv_closesocket(int *length, ...)
 */
 static void *illsrv_server()
 {
+	char message[MAXTEXTSIZE + 1], ipclient[100];
 	int mlength, socsize, socket_r, clnt_r;
 	struct sockaddr_in server, client;
-	char message[MAXTEXTSIZE];
 
 	socsize = sizeof(struct sockaddr_in);
 	server.sin_port = htons(ILLUM_PORT);
@@ -129,6 +129,7 @@ static void *illsrv_server()
 	for (;; sockflag = false) {
 		memset(server.sin_zero, '\0', sizeof(server.sin_zero));
 		memset(message, '\0', MAXTEXTSIZE);
+		memset(ipclient, '\0', 100);
 		illsrv_createsocket(&socket_r);
 
 		if (bind(socket_r, (struct sockaddr *)&server,
@@ -147,6 +148,8 @@ static void *illsrv_server()
 		}
 
 		mlength = recv(clnt_r, message, MAXTEXTSIZE, 0);
+		inet_ntop(AF_INET, &client.sin_addr, ipclient, 100);
+
 		illsrv_closesocket(&(int){2}, &socket_r, &clnt_r);
 		if (MAXTEXTSIZE >= mlength && message[mlength] == '\0')
 			printf(message);
@@ -161,21 +164,30 @@ static void *illsrv_server()
 static void *illsrv_client()
 {
 	struct sockaddr_in client;
+	int socket_r, length = 0;
 	struct stask task;
 	char *message;
-	int socket_r;
 
 	client.sin_port = htons(ILLUM_PORT);
 	client.sin_family = AF_INET;
+	message = (char *)malloc(1);
 
-	for (;; database->currenttask(&task, errfile)) {
+	for (;; database->currenttask(&task, errfile), length = 0) {
 		if (sockflag || !task.ipaddr || task.id == 0)
 			continue;
 
-		message = task.text;
 		if (task.cert && task.cert != NULL)
-			// message = enc->encrypt(task.text, task.cert);
+			// task.headers = enc->encrypt(task.text, task.cert);
 			printf("Hah, lol\n");
+
+		if (task.text && task.text != NULL)
+			length += strlen(task.text);
+		else
+			task.text = "\0";
+		length += strlen(task.headers);
+
+		message = (char *)realloc(message, length + 10);
+		sprintf(message, "%s\r\n\r\n%s", task.headers, task.text);
 
 		database->removetask(task.id);
 		illsrv_createsocket(&socket_r);
@@ -183,12 +195,13 @@ static void *illsrv_client()
 		memset(client.sin_zero, '\0', sizeof(client.sin_zero));
 
 		if (connect(socket_r, (struct sockaddr *)&client, sizeof(client)) < 0
-			|| send(socket_r, message, strlen(message), 0) < 0)
+			|| send(socket_r, message, strlen(message) + 1, 0) < 0)
 			fprintf(errfile, "Error: Can't send message (client).\n");
 
 		illsrv_closesocket(&(int){1}, &socket_r);
 	}
 
+	free(message);
 	pthread_exit(0);
 }
 /**
@@ -216,7 +229,7 @@ static void illsrv_setnode(char *ipaddr)
 	memset(server.sin_zero, '\0', sizeof(server.sin_zero)); 
 
 	if (connect(socket_r, (struct sockaddr *)&server, sizeof(server)) < 0
-		|| send(socket_r, message, strlen(message), 0) < 0) {
+		|| send(socket_r, message, strlen(message) + 1, 0) < 0) {
 		fprintf(errfile, "Error: Can't send message (setnode).\n");
 		goto exit_setnode;
 	}
