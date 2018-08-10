@@ -24,21 +24,21 @@
 *	Доступные структуры
 */
 struct node_list {
+	char *ipaddr, *hash, *cert;
 	unsigned int id, mseconds;
-	char *ipaddr, *hash, *about, *cert;
 };
 
 struct stask {
+	char *ipaddr, *cert, *text, *headers;
 	unsigned int id;
-	char *ipaddr, *cert, *text;
 };
 
 typedef struct {
 	bool (*removetask)(), (*newnode)();
 	struct node_list *(*nodelist)();
+	int (*newtask)(), (*nodenum)();
 	void (*currenttask)();
 	char *(*setting)();
-	int (*newtask)();
 } illdb;
 /**
 *	Доступные функции
