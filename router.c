@@ -33,7 +33,7 @@ struct functions {
 *	Прототипы приватных функций
 */
 static bool illrouter_mkclearhdr(struct node_list *, unsigned int,
-	char *,char *, enum illheader);
+	char *, char *, enum illheader);
 static bool illrouter_clearmsg(json_object *, struct clearhdr *);
 static void illrouter_befriends(json_object *);
 static void illrouter_newroute(enum illheader);
@@ -189,9 +189,9 @@ static bool illrouter_resend(struct node_list *list,
 		return false;
 	}
 
-	for (int i = 0; i < len; i++) {
-		//db->
-	}
+	for (int i = 0; i < len; i++)
+		if (list[i].ipaddr && strlen(list[i].ipaddr) >= 7)
+			db->newtask(list[i].ipaddr, NULL, NULL, headers, errfile);
 
 	return true;
 }
@@ -222,12 +222,11 @@ static void illrouter_newnode(json_object *jobj)
 		return;
 	}
 	else if (len < MAXNODES) {
-		own.
-		/* i have less nodes than i need, send request */
+		own.ipaddr = jobj->ipaddr;
+		illrouter_resend(&own, 1, /*Here BEFRIENDS*/);
 	}
 
-
-	/* send request to next nodes */
+	illrouter_resend(list, len, jobj);
 }
 /**
 *	illrouter_newnode - Функция создания маршрута для
