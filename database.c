@@ -8,11 +8,12 @@
 /**
 *	Прототипы приватных функций
 */
-static bool	illdb_newnode(char *, char *, unsigned int, char *, FILE *);
-static int	illdb_settask(char *, char *, char *, char *, FILE *);
+static bool	illdb_newnode(char *, char *, unsigned int, FILE *);
+static int	illdb_settask(char *, char *, char *, FILE *);
 struct node_list *illdb_nodelist(unsigned int *, FILE *);
 static void illdb_currenttask(struct stask *, FILE *);
 static bool	illdb_removetask(unsigned int, FILE *);
+static void illdb_staticnode(char *, FILE *);
 static int	illdb_nodenum(FILE *);
 static bool	illdb_tables(FILE *);
 static void illdb_removecache();
@@ -43,6 +44,7 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
 			fprintf(errf, "Can't open database: %s\n", sqlite3_errmsg(db));
 		return status;
 	}
+	illdb_removecache();
 
 	dbstruct->currenttask = illdb_currenttask;
 	dbstruct->staticnode = illdb_staticnode;
@@ -51,8 +53,6 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
 	dbstruct->newtask = illdb_settask;
 	dbstruct->newnode = illdb_newnode;
 	dbstruct->nodenum = illdb_nodenum;
-
-	illdb_removecache();
 
 	if (dbstruct->removetask && dbstruct->nodelist
 		&& dbstruct->newtask && dbstruct->newnode
@@ -79,7 +79,8 @@ static bool illdb_removetask(unsigned int id, FILE *errf)
 		goto exit_removetask;
 	}
 
-	sprintf(sql, "UPDATE `tasks` SET `status`='1' WHERE `id`='%d';", id);
+	sprintf(sql, "UPDATE `tasks` SET `status`='1' WHERE `id`='%d';",
+			id);
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_OK)
 		goto exit_removetask;
@@ -90,6 +91,37 @@ exit_removetask:
 		sqlite3_finalize(rs);
 	free(sql);
 	return status;
+}
+/**
+*	illdb_staticnode - Функция подтверждения статического подключения
+*	между нодами.
+*
+*	@hash - Хэш ноды.
+*	@errf - Файловый стрим для записи ошибок.
+*/
+static void illdb_staticnode(char *hash, FILE *errf)
+{
+	sqlite3_stmt *rs;
+	char *sql;
+
+	if (!hash || strlen(hash) < 10) {
+		fprintf(errf, "Error: Incorrest hash: %s\n", hash);
+		goto exit_staticnode;
+	}
+
+	sql = (char *)malloc(100 + strlen(hash));
+	sprintf(sql, "UPDATE `nodes` SET `status`='1' WHERE `hash`='%s';",
+			hash);
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_OK) {
+		fprintf(errf, "Error: Can't update node status.\n");
+		goto exit_staticnode;
+	}
+
+exit_staticnode:
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	return;
 }
 /**
 *	illdb_removecache - Функция удаления лишних записей из базы.
@@ -118,7 +150,7 @@ static void illdb_removecache()
 *	@errf - Файловый стрим для записи ошибок.
 */
 static bool illdb_newnode(char *ipaddr, char *hash,
-	unsigned int mseconds, char *cert, FILE *errf)
+	unsigned int mseconds, FILE *errf)
 {
 	sqlite3_stmt *rs = NULL;
 	unsigned int length = 0;
@@ -126,19 +158,21 @@ static bool illdb_newnode(char *ipaddr, char *hash,
 	char *sql;
 
 	if (!ipaddr || strlen(ipaddr) < 7 || !hash || strlen(hash) < 10
-		|| mseconds < 0 || !cert || strlen(cert) < 100) {
-		fprintf(errf, "Error: Incorrect input data in illdb_settask.\n");
+		|| mseconds < 0) {
+		fprintf(errf, "Error: Incorrect input data in illdb_newnode.\n");
 		return status;
 	}
 
-	if ((length = strlen(ipaddr) + strlen(hash) + strlen(cert))
-		> MAX_TEXTSIZE) {
+	//sqlite3_prepare_v2(db, "S");
+
+	if ((length = strlen(ipaddr) + strlen(hash)) > MAX_TEXTSIZE) {
 		fprintf(errf, "Error: Text size for task more than you can write.\n");
 		goto exit_newnode;
 	}
 	sql = (char *)malloc(length + 100);
-	sprintf(sql, "INSERT INTO `nodes` VALUES (NULL, '%s', '%s', '%i', '%s', 0);",
-			ipaddr, hash, mseconds, cert);
+	sprintf(sql, "INSERT INTO `nodes` VALUES (NULL, '%s', '%s', '%i', 0);",
+			ipaddr, hash, mseconds);
+
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Can't set new node to database.\n");
@@ -176,19 +210,10 @@ static void illdb_currenttask(struct stask *data, FILE *errf)
 		goto exit_currenttask;
 	}
 
-	for (int i = 0; i < 5; i++)
-		if (strlen((const char *)sqlite3_column_text(rs, i)) > MAX_TEXTSIZE) {
-			fprintf(errf, "Error: Value of element is very long "
-					"in illdb_currenttask\n");
-			data->id = 0;
-			goto exit_currenttask;
-		}
-
-	data->id = (unsigned int)atoi((const char *)sqlite3_column_text(rs, 0));
-	data->headers = (char *)sqlite3_column_text(rs, 4);
+	data->id = atoi((const char *)sqlite3_column_text(rs, 0));
+	data->headers = (char *)sqlite3_column_text(rs, 3);
 	data->ipaddr = (char *)sqlite3_column_text(rs, 1);
-	data->cert = (char *)sqlite3_column_text(rs, 2);
-	data->text = (char *)sqlite3_column_text(rs, 3);
+	data->text = (char *)sqlite3_column_text(rs, 2);
 
 exit_currenttask:
 	if (rs && rs != NULL)
@@ -202,26 +227,34 @@ exit_currenttask:
 */
 struct node_list *illdb_nodelist(unsigned int *num, FILE *errf)
 {
-	struct node_list *data = (struct node_list *)malloc(sizeof(struct node_list));
+	struct node_list *data = NULL;
 	sqlite3_stmt *rs = NULL;
-	unsigned int length = 0;
+	int i = -1, tmp = 0;
 
-	sqlite3_prepare_v2(db, "SELECT * FROM `nodes` WHERE `status`='1'", -1, &rs, NULL);
-	while (length++, sqlite3_step(rs) == SQLITE_ROW) {
-		data = (struct node_list *)realloc(data, sizeof(struct node_list) * length + 1);
-		for (int i = 0; i < 6; i++)
-			if (strlen((const char *)sqlite3_column_text(rs, i)) > MAX_TEXTSIZE) {
-				fprintf(errf, "Error: Value of element is very long in illdb_nodelist\n");
-				(*num) = 0;
-				goto exit_nodelist;
-			}
-		data[length - 1].id = (unsigned int)atoi((const char *)sqlite3_column_text(rs, 0));
-		data[length - 1].mseconds = (unsigned int)atoi((const char *)sqlite3_column_text(rs, 3));
-		data[length - 1].ipaddr = (char *)sqlite3_column_text(rs, 1);
-		data[length - 1].hash = (char *)sqlite3_column_text(rs, 2);
-		data[length - 1].cert = (char *)sqlite3_column_text(rs, 5);
+	if ((*num = illdb_nodenum(errf)) < 1) {
+		*num = 0;
+		goto exit_nodelist;
 	}
-	(*num) = length - 1;
+
+	data = (struct node_list *)malloc(sizeof(struct node_list) * (*num));
+	sqlite3_prepare_v2(db, "SELECT * FROM `nodes` WHERE `status`='1'",
+		-1, &rs, NULL);
+
+	while (i++, sqlite3_step(rs) == SQLITE_ROW) {
+		if (i > (*num) - 1)
+			break;
+
+		data[i].id = atoi((const char *)sqlite3_column_text(rs, 0));
+		data[i].ipaddr = (char *)malloc(16);
+		data[i].hash = (char *)malloc(100);
+
+		if ((tmp = strlen((const char *)sqlite3_column_text(rs, 1)))
+			<= 15)
+			memcpy(data[i].ipaddr, sqlite3_column_text(rs, 1), tmp + 1);
+		if ((tmp = strlen((const char *)sqlite3_column_text(rs, 2)))
+			<= 99)
+			memcpy(data[i].hash, sqlite3_column_text(rs, 2), tmp + 1);
+	}
 
 exit_nodelist:
 	if (rs && rs != NULL)
@@ -237,39 +270,39 @@ exit_nodelist:
 *	@headers - Заголовки к сообщению.
 *	@errf - Файловый стрим для записи ошибок.
 */
-static int illdb_settask(char *ipaddr, char *cert, char *text,
-	char *headers,  FILE *errf)
+static int illdb_settask(char *ipaddr, char *text, char *headers, 
+	FILE *errf)
 {
 	sqlite3_stmt *rs = NULL;
 	unsigned int length = 0;
 	int id = -1;
 	char *sql;
 
-	if (!ipaddr || strlen(ipaddr) < 7 || !headers || strlen(headers) < 10) {
+	if (!ipaddr || strlen(ipaddr) < 7 || !headers || strlen(headers) < 8) {
 		fprintf(errf, "Error: Incorrect input data in illdb_settask.\n");
 		return id;
 	}
 
-	if (cert && cert != NULL)
-		length += strlen(cert);
 	if (text && text != NULL)
 		length += strlen(text);
 	if ((length += strlen(ipaddr) + strlen(headers)) > MAX_TEXTSIZE) {
 		fprintf(errf, "Error: Text size for task more then you can write.\n");
 		return id;
 	}
-	
+
 	sql = (char *)malloc(length + 100);
-	sprintf(sql, "INSERT INTO `tasks` VALUES (NULL, '%s', '%s', '%s', '%s', 0);",
-		ipaddr, ((!cert || cert == NULL) ? "" : cert),
-		((!text || text == NULL) ? "" : text), headers);
+	sprintf(sql, "INSERT INTO `tasks` VALUES (NULL, '%s', '%s', '%s', 0);",
+		ipaddr, ((!text || text == NULL) ? "" : text), headers);
 
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Can't create new task.\n");
 		goto exit_settask;
 	}
+
 	sqlite3_prepare_v2(db, "SELECT last_insert_rowid();", -1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_DONE)
+		goto exit_settask;
 	id = atoi((const char *)sqlite3_column_text(rs, 0));
 
 exit_settask:
@@ -290,7 +323,7 @@ static int illdb_nodenum(FILE *errf)
 
 	sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM `nodes` WHERE `status`='1'",
 		-1, &rs, NULL);
-	if (sqlite3_step(rs) != SQLITE_DONE) {
+	if (sqlite3_step(rs) != SQLITE_ROW) {
 		fprintf(errf, "Error: Can't select number of nodes\n");
 		goto exit_nodenum;
 	}
@@ -313,8 +346,8 @@ static bool illdb_tables(FILE *errf)
 
 	sqlite3_prepare_v2(db, "CREATE TABLE IF NOT EXISTS `tasks` ("
 	"`id` INTEGER PRIMARY KEY AUTOINCREMENT, `ip` text NOT NULL,"
-	"`cert` text, `text` text, `headers` text NOT NULL, `status`" 
-	"int(11) NOT NULL DEFAULT 0);", -1, &rs, NULL);
+	"`text` text, `headers` text NOT NULL, `status` int(11) NOT "
+	"NULL DEFAULT 0);", -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Sqlite can't create tasks table.\n");
 		goto exit_tables;
@@ -328,8 +361,8 @@ static bool illdb_tables(FILE *errf)
 	}
 	sqlite3_prepare_v2(db, "CREATE TABLE IF NOT EXISTS `nodes` ("
 	"`id` INTEGER PRIMARY KEY AUTOINCREMENT, `ip` text NOT NULL,"
-	"`hash` text NOT NULL, `mseconds` int(11) NOT NULL, `cert` text"
-	"NOT NULL, `status` int(11) NOT NULL DEFAULT 0);", -1, &rs, NULL);
+	"`hash` text NOT NULL, `mseconds` int(11) NOT NULL, `status`"
+	"int(11) NOT NULL DEFAULT 0);", -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Sqlite can't create nodes table.\n");
 		goto exit_tables;
