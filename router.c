@@ -196,6 +196,7 @@ static bool illrouter_decode(json_object *jobj, struct headers *msg)
 *	нод с неполным стеком подключений.
 *
 *	@jobj - Json объект маршрута.
+*	@ipaddr - Ip с которого пришел запрос.
 */
 static void illrouter_newnode(json_object *jobj, char *ipaddr)
 {
@@ -214,16 +215,14 @@ static void illrouter_newnode(json_object *jobj, char *ipaddr)
 	}
 
 	list = db->nodelist(&len, errfile);
-	if (!list || list == NULL) {
-		fprintf(errfile, "Error: Can't exec nodelist func.\n");
-		return;
-	}
-	else if (len < MAXNODES) {
+	if (len < MAXNODES) {
 		ipc = (msg.ipaddr && strlen(msg.ipaddr) >= 7)
 			? msg.ipaddr : ipaddr;
 
-		db->newnode(ipc, msg.hash, 10, errfile);
-		illrouter_newroute(ILL_BEFRIENDS, ipc);
+		if (!db->isset_node(ipc, msg.hash, 2, errfile)) {
+			db->newnode(ipc, msg.hash, 10, errfile);
+			illrouter_newroute(ILL_BEFRIENDS, ipc);
+		}
 	}
 
 	if (!msg.ipaddr || msg.ipaddr == NULL || strlen(msg.ipaddr) < 7)
@@ -236,8 +235,12 @@ static void illrouter_newnode(json_object *jobj, char *ipaddr)
 		goto exit_newnode;
 	}
 
+	if (!list || list == NULL)
+		goto exit_newnode;
+
 	for (int i = 0; i < len; i++)
-		if (list[i].ipaddr && strlen(list[i].ipaddr) >= 7) {
+		if (list[i].ipaddr && strlen(list[i].ipaddr) >= 7
+			&& list[i].ipaddr != ipaddr) {
 			db->newtask(list[i].ipaddr, NULL, headers, errfile);
 			free(list[i].ipaddr);
 			free(list[i].hash);
@@ -254,6 +257,7 @@ exit_newnode:
 *	проверки ноды, в сети или нет.
 *
 *	@jobj - Json объект маршрута.
+*	@ipaddr - Ip с которого пришел запрос.
 */
 static void illrouter_ping(json_object *jobj, char *ipaddr)
 {
@@ -271,6 +275,7 @@ static void illrouter_ping(json_object *jobj, char *ipaddr)
 *	сбора статистики сети.
 *
 *	@jobj - Json объект маршрута.
+*	@ipaddr - Ip с которого пришел запрос.
 */
 static void illrouter_stat(json_object *jobj, char *ipaddr)
 {
@@ -288,23 +293,39 @@ static void illrouter_stat(json_object *jobj, char *ipaddr)
 *	подтверждения статической связи между нодами.
 *
 *	@jobj - Json объект маршрута.
+*	@ipaddr - Ip с которого пришел запрос.
 */
 static void illrouter_befriends(json_object *jobj, char *ipaddr)
 {
 	struct headers msg;
+
+	if (!jobj || jobj == NULL || !ipaddr || ipaddr == NULL) {
+		fprintf(errfile, "Warring: Invalid json object(1).\n");
+		return;
+	}
+	if (!illrouter_decode(jobj, &msg)
+		|| db->isset_node(ipaddr, msg.hash, 1, errfile)) {
+		fprintf(errfile, "Warring: Except in befriends.\n");
+		return;
+	}
+	if (db->nodenum(errfile) < MAXNODES)
+		return;
 	
-	if (!jobj || jobj == NULL) {
-		fprintf(errfile, "Error: Invalid json object(4).\n");
+	if (db->isset_node(ipaddr, msg.hash, 0, errfile)) {
+		db->staticnode(msg.hash, errfile);
+		illrouter_newroute(ILL_BEFRIENDS, ipaddr);
 		return;
 	}
 
-	illrouter_decode(jobj, &msg);
+	db->newnode(ipaddr, msg.hash, 10, errfile);
+	illrouter_newroute(ILL_BEFRIENDS, ipaddr);
 }
 /**
 *	illrouter_newnode - Функция создания маршрута для
 *	отправки обычного сообщения.
 *
 *	@jobj - Json объект маршрута.
+*	@ipaddr - Ip с которого пришел запрос.
 */
 static void illrouter_straight(json_object *jobj, char *ipaddr)
 {
@@ -315,6 +336,7 @@ static void illrouter_straight(json_object *jobj, char *ipaddr)
 *	отправки сообщения через луковую маршрутизацию.
 *
 *	@jobj - Json объект маршрута.
+*	@ipaddr - Ip с которого пришел запрос.
 */
 static void illrouter_onion(json_object *jobj, char *ipaddr)
 {
