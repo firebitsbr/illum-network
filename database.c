@@ -8,10 +8,12 @@
 /**
 *	Прототипы приватных функций
 */
+static bool illdb_issetnode(char *, char *, unsigned int, FILE *);
 static bool	illdb_newnode(char *, char *, unsigned int, FILE *);
 static int	illdb_settask(char *, char *, char *, FILE *);
 struct node_list *illdb_nodelist(unsigned int *, FILE *);
 static void illdb_currenttask(struct stask *, FILE *);
+static bool illdb_issettask(char *, char *, FILE *);
 static bool	illdb_removetask(unsigned int, FILE *);
 static void illdb_staticnode(char *, FILE *);
 static int	illdb_nodenum(FILE *);
@@ -53,11 +55,12 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
 	dbstruct->newtask = illdb_settask;
 	dbstruct->newnode = illdb_newnode;
 	dbstruct->nodenum = illdb_nodenum;
+	dbstruct->isset_node = illdb_issetnode;
 
 	if (dbstruct->removetask && dbstruct->nodelist
 		&& dbstruct->newtask && dbstruct->newnode
 		&& dbstruct->currenttask && dbstruct->nodenum
-		&& dbstruct->staticnode)
+		&& dbstruct->staticnode && dbstruct->isset_node)
 		status = true;
 
 	return status;
@@ -104,23 +107,22 @@ static void illdb_staticnode(char *hash, FILE *errf)
 	sqlite3_stmt *rs;
 	char *sql;
 
-	if (!hash || strlen(hash) < 10) {
-		fprintf(errf, "Error: Incorrest hash: %s\n", hash);
+	if (!hash || strlen(hash) < 10 || strlen(hash) > 100) {
+		fprintf(errf, "Error: Incorrest hash.\n");
 		goto exit_staticnode;
 	}
 
 	sql = (char *)malloc(100 + strlen(hash));
-	sprintf(sql, "UPDATE `nodes` SET `status`='1' WHERE `hash`='%s';",
-			hash);
+	sprintf(sql, "UPDATE `nodes` SET `status`='1' WHERE "
+		"`hash`='%s'", hash);
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
-	if (sqlite3_step(rs) != SQLITE_OK) {
-		fprintf(errf, "Error: Can't update node status.\n");
-		goto exit_staticnode;
-	}
+	sqlite3_step(rs);
 
 exit_staticnode:
 	if (rs && rs != NULL)
 		sqlite3_finalize(rs);
+	if (sql && sql != NULL)
+		free(sql);
 	return;
 }
 /**
@@ -140,11 +142,51 @@ static void illdb_removecache()
 		sqlite3_finalize(rs);
 }
 /**
+*	illdb_issetnode - Функция проверки существования ноды в бд.
+*
+*	@ipaddr - Ip адрес получателя сообщения.
+*	@hash - Ключ ноды для распознования в сети.
+*	@id - Тип фильтрации ноды.
+*	@errf - Файловый стрим для записи ошибок.
+*/
+static bool illdb_issetnode(char *ipaddr, char *hash,
+	unsigned int id, FILE *errf)
+{
+	sqlite3_stmt *rs = NULL;
+	unsigned int len = 0;
+	bool status = true;
+	char *sql, *stat = "\0";
+
+	if (!ipaddr || ipaddr == NULL || !hash || hash == NULL || id < 0) {
+		fprintf(errf, "Error: Incorrect params in illdb_issetnode.\n");
+		return status;
+	}
+	if ((len = strlen(ipaddr) + strlen(hash)) > 200) 
+		return status;
+
+	if (id != 2)
+		stat = (id == 0) ? " AND `status`='0'" : " AND `status`='1'";
+
+	sql = (char *)malloc(len + 100);
+	sprintf(sql, "SELECT COUNT(*) FROM `nodes` WHERE `hash`='%s'%s",
+		hash, stat);
+printf("%s %s - %s\n", ipaddr, hash, sql);
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+	if (sqlite3_step(rs) == SQLITE_ROW
+		&& atoi((const char *)sqlite3_column_text(rs, 0)) == 0)
+		status = false;
+
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	free(sql);
+
+	return status;
+}
+/**
 *	illdb_newnode - Функция занесения новой ноды в базу данных.
 *
 *	@ipaddr - Ip адрес получателя сообщения.
 *	@hash - Ключ ноды для распознования в сети.
-*	@cert - Публичный сертификат получателя сообщения.
 *	@text - Текст сообщения.
 *	@mseconds - Время отклика узла.
 *	@errf - Файловый стрим для записи ошибок.
@@ -161,9 +203,9 @@ static bool illdb_newnode(char *ipaddr, char *hash,
 		|| mseconds < 0) {
 		fprintf(errf, "Error: Incorrect input data in illdb_newnode.\n");
 		return status;
-	}
-
-	//sqlite3_prepare_v2(db, "S");
+	}printf("2\n");
+	if (illdb_issetnode(ipaddr, hash, 2, errf))
+		return status;
 
 	if ((length = strlen(ipaddr) + strlen(hash)) > MAX_TEXTSIZE) {
 		fprintf(errf, "Error: Text size for task more than you can write.\n");
@@ -198,8 +240,9 @@ static void illdb_currenttask(struct stask *data, FILE *errf)
 	sqlite3_stmt *rs = NULL;
 
 	if (!data || data == NULL) {
-		fprintf(errf, "Error: Incorrect pointer in illdb_currenttask.\n");
 		data->id = 0;
+		fprintf(errf, "Error: Incorrect pointer in "
+			"illdb_currenttask.\n");
 		goto exit_currenttask;
 	}
 
@@ -262,10 +305,45 @@ exit_nodelist:
 	return data;
 }
 /**
+*	illdb_issettask - Функция проверяет одинаковые запросы в бд.
+*
+*	@ipaddr - Ip адрес получателя сообщения.
+*	@headers - Заголовки к сообщению.
+*	@errf - Файловый стрим для записи ошибок.
+*/
+static bool illdb_issettask(char *ipaddr, char *headers, FILE *errf)
+{
+	sqlite3_stmt *rs = NULL;
+	unsigned int len = 0;
+	bool status = true;
+	char *sql;
+
+	if (!ipaddr || ipaddr == NULL || !headers || headers == NULL) {
+		fprintf(errf, "Error: Incorrect params in issettask\n");
+		return status;
+	}
+	if ((len = strlen(ipaddr) + strlen(headers)) > 600)
+		return status;
+
+	sql = (char *)malloc(len + 100);
+	sprintf(sql, "SELECT COUNT(*) FROM `tasks` WHERE `ip`='%s' "
+		"AND `headers`='%s' AND `status`='0';", ipaddr, headers);
+
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+	if (sqlite3_step(rs) == SQLITE_ROW
+		&& atoi((const char *)sqlite3_column_text(rs, 0)) == 0)
+		status = false;
+
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	free(sql);
+
+	return status;
+}
+/**
 *	illdb_settask - Функция создания новой задачи.
 *
 *	@ipaddr - Ip адрес получателя сообщения.
-*	@cert - Публичный сертификат получателя сообщения.
 *	@text - Текст сообщения.
 *	@headers - Заголовки к сообщению.
 *	@errf - Файловый стрим для записи ошибок.
@@ -282,6 +360,9 @@ static int illdb_settask(char *ipaddr, char *text, char *headers,
 		fprintf(errf, "Error: Incorrect input data in illdb_settask.\n");
 		return id;
 	}
+
+	if (illdb_issettask(ipaddr, headers, errf)) 
+		return id;
 
 	if (text && text != NULL)
 		length += strlen(text);
