@@ -8,21 +8,22 @@
 /**
 *	Прототипы приватных функций
 */
-static bool illdb_issetnode(char *, char *, unsigned int, FILE *);
-static bool	illdb_newnode(char *, char *, unsigned int, FILE *);
-static int	illdb_settask(char *, char *, char *, FILE *);
-struct node_list *illdb_nodelist(unsigned int *, FILE *);
-static void illdb_currenttask(struct stask *, FILE *);
-static bool illdb_issettask(char *, char *, FILE *);
-static bool	illdb_removetask(unsigned int, FILE *);
-static void illdb_staticnode(char *, FILE *);
-static int	illdb_nodenum(FILE *);
-static bool	illdb_tables(FILE *);
+static bool illdb_issetnode(char *, char *, unsigned int);
+static int	illdb_settask(char *, char *, char *);
+struct node_list *illdb_nodelist(unsigned int *);
+static void illdb_currenttask(struct stask *);
+static bool illdb_issettask(char *, char *);
+static bool	illdb_removetask(unsigned int);
+static bool	illdb_newnode(char *, char *);
+static void illdb_staticnode(char *);
 static void illdb_removecache();
+static int	illdb_nodenum();
+static bool	illdb_tables();
 /**
 *	Глобальные переменные
 */
 static sqlite3 *db;
+static FILE *errf;
 /**
 *	illdb_init - Функция инициализации подключения
 *	к базе данных с поледующим создание структуры.
@@ -31,17 +32,17 @@ static sqlite3 *db;
 *	@dbstruct - Главная управляющая структура.
 *	@errf - Файловый стрим для записи ошибок.
 */
-bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
+bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errfile)
 {
 	int st_sqlite3 = -100;
 	bool status = false;
 
-	if (!dbpath || strlen(dbpath) < 8 || !dbstruct || !errf) {
+	if (!dbpath || strlen(dbpath) < 8 || !dbstruct || !(errf = errfile)) {
 		printf("Error: Input params in illdb_init are incorrect.\n");
 		return status;
 	}
 	if ((st_sqlite3 = sqlite3_open(dbpath, &db)) != SQLITE_OK
-		|| !illdb_tables(errf)) {
+		|| !illdb_tables()) {
 		if (st_sqlite3 != SQLITE_OK)
 			fprintf(errf, "Can't open database: %s\n", sqlite3_errmsg(db));
 		return status;
@@ -71,7 +72,7 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errf)
 *	@id - Id задания в базе данных.
 *	@errf - Файловый стрим для записи ошибок.
 */
-static bool illdb_removetask(unsigned int id, FILE *errf)
+static bool illdb_removetask(unsigned int id)
 {
 	sqlite3_stmt *rs = NULL;
 	char *sql = (char *)malloc(200);
@@ -102,7 +103,7 @@ exit_removetask:
 *	@hash - Хэш ноды.
 *	@errf - Файловый стрим для записи ошибок.
 */
-static void illdb_staticnode(char *hash, FILE *errf)
+static void illdb_staticnode(char *hash)
 {
 	sqlite3_stmt *rs;
 	char *sql;
@@ -149,28 +150,35 @@ static void illdb_removecache()
 *	@id - Тип фильтрации ноды.
 *	@errf - Файловый стрим для записи ошибок.
 */
-static bool illdb_issetnode(char *ipaddr, char *hash,
-	unsigned int id, FILE *errf)
+static bool illdb_issetnode(char *ipaddr, char *hash, unsigned int id)
 {
+	char *sql, *stat = "\0", *value;
+	bool status = true, type;
 	sqlite3_stmt *rs = NULL;
 	unsigned int len = 0;
-	bool status = true;
-	char *sql, *stat = "\0";
 
-	if (!ipaddr || ipaddr == NULL || !hash || hash == NULL || id < 0) {
+	if (ipaddr && ipaddr != NULL && strlen(ipaddr) > 6) {
+		value = ipaddr;
+		type = true;
+	}
+	else if (hash && hash != NULL && strlen(hash) < 101) {
+		value = hash;
+		type = false;
+	}
+	else {
 		fprintf(errf, "Error: Incorrect params in illdb_issetnode.\n");
 		return status;
 	}
-	if ((len = strlen(ipaddr) + strlen(hash)) > 200) 
+	if ((len = strlen(value)) > 200) 
 		return status;
 
 	if (id != 2)
-		stat = (id == 0) ? " AND `status`='0'" : " AND `status`='1'";
+		stat = (id == 0) ? "AND `status`='0'" : "AND `status`='1'";
 
 	sql = (char *)malloc(len + 100);
-	sprintf(sql, "SELECT COUNT(*) FROM `nodes` WHERE `hash`='%s'%s",
-		hash, stat);
-printf("%s %s - %s\n", ipaddr, hash, sql);
+	sprintf(sql, "SELECT COUNT(*) FROM `nodes` WHERE `%s`='%s' %s",
+		((type) ? "ip" : "hash"), value, stat);
+
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
 	if (sqlite3_step(rs) == SQLITE_ROW
 		&& atoi((const char *)sqlite3_column_text(rs, 0)) == 0)
@@ -191,29 +199,30 @@ printf("%s %s - %s\n", ipaddr, hash, sql);
 *	@mseconds - Время отклика узла.
 *	@errf - Файловый стрим для записи ошибок.
 */
-static bool illdb_newnode(char *ipaddr, char *hash,
-	unsigned int mseconds, FILE *errf)
+static bool illdb_newnode(char *ipaddr, char *hash)
 {
 	sqlite3_stmt *rs = NULL;
 	unsigned int length = 0;
 	bool status = false;
+	time_t time_p;
 	char *sql;
 
-	if (!ipaddr || strlen(ipaddr) < 7 || !hash || strlen(hash) < 10
-		|| mseconds < 0) {
+	if (!ipaddr || strlen(ipaddr) < 7 || !hash || strlen(hash) < 10) {
 		fprintf(errf, "Error: Incorrect input data in illdb_newnode.\n");
 		return status;
-	}printf("2\n");
-	if (illdb_issetnode(ipaddr, hash, 2, errf))
+	}
+	if (illdb_issetnode(ipaddr, NULL, 2))
 		return status;
 
 	if ((length = strlen(ipaddr) + strlen(hash)) > MAX_TEXTSIZE) {
 		fprintf(errf, "Error: Text size for task more than you can write.\n");
 		goto exit_newnode;
 	}
+
+	time_p = time(NULL);
 	sql = (char *)malloc(length + 100);
-	sprintf(sql, "INSERT INTO `nodes` VALUES (NULL, '%s', '%s', '%i', 0);",
-			ipaddr, hash, mseconds);
+	sprintf(sql, "INSERT INTO `nodes` VALUES (NULL, '%s', '%s', '%ld', 0);",
+			ipaddr, hash, time_p);
 
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
@@ -235,7 +244,7 @@ exit_newnode:
 *
 *	@errf - Файловый стрим для записи ошибок.
 */
-static void illdb_currenttask(struct stask *data, FILE *errf)
+static void illdb_currenttask(struct stask *data)
 {
 	sqlite3_stmt *rs = NULL;
 
@@ -268,13 +277,13 @@ exit_currenttask:
 *	@num - Количество нод в базе.
 *	@errf - Файловый стрим для записи ошибок.
 */
-struct node_list *illdb_nodelist(unsigned int *num, FILE *errf)
+struct node_list *illdb_nodelist(unsigned int *num)
 {
 	struct node_list *data = NULL;
 	sqlite3_stmt *rs = NULL;
 	int i = -1, tmp = 0;
 
-	if ((*num = illdb_nodenum(errf)) < 1) {
+	if ((*num = illdb_nodenum()) < 1) {
 		*num = 0;
 		goto exit_nodelist;
 	}
@@ -287,6 +296,7 @@ struct node_list *illdb_nodelist(unsigned int *num, FILE *errf)
 		if (i > (*num) - 1)
 			break;
 
+		data[i].ping = atoi((const char *)sqlite3_column_text(rs, 3));
 		data[i].id = atoi((const char *)sqlite3_column_text(rs, 0));
 		data[i].ipaddr = (char *)malloc(16);
 		data[i].hash = (char *)malloc(100);
@@ -311,7 +321,7 @@ exit_nodelist:
 *	@headers - Заголовки к сообщению.
 *	@errf - Файловый стрим для записи ошибок.
 */
-static bool illdb_issettask(char *ipaddr, char *headers, FILE *errf)
+static bool illdb_issettask(char *ipaddr, char *headers)
 {
 	sqlite3_stmt *rs = NULL;
 	unsigned int len = 0;
@@ -348,8 +358,7 @@ static bool illdb_issettask(char *ipaddr, char *headers, FILE *errf)
 *	@headers - Заголовки к сообщению.
 *	@errf - Файловый стрим для записи ошибок.
 */
-static int illdb_settask(char *ipaddr, char *text, char *headers, 
-	FILE *errf)
+static int illdb_settask(char *ipaddr, char *text, char *headers)
 {
 	sqlite3_stmt *rs = NULL;
 	unsigned int length = 0;
@@ -361,7 +370,7 @@ static int illdb_settask(char *ipaddr, char *text, char *headers,
 		return id;
 	}
 
-	if (illdb_issettask(ipaddr, headers, errf)) 
+	if (illdb_issettask(ipaddr, headers)) 
 		return id;
 
 	if (text && text != NULL)
@@ -397,7 +406,7 @@ exit_settask:
 *
 *	@errf - Файловый стрим для записи ошибок.
 */
-static int illdb_nodenum(FILE *errf)
+static int illdb_nodenum()
 {
 	sqlite3_stmt *rs = NULL;
 	int number = 0;
@@ -420,7 +429,7 @@ exit_nodenum:
 *
 *	@errf - Файловый стрим для записи ошибок.
 */
-static bool illdb_tables(FILE *errf)
+static bool illdb_tables()
 {
 	sqlite3_stmt *rs = NULL;
 	bool status = false;
@@ -442,7 +451,7 @@ static bool illdb_tables(FILE *errf)
 	}
 	sqlite3_prepare_v2(db, "CREATE TABLE IF NOT EXISTS `nodes` ("
 	"`id` INTEGER PRIMARY KEY AUTOINCREMENT, `ip` text NOT NULL,"
-	"`hash` text NOT NULL, `mseconds` int(11) NOT NULL, `status`"
+	"`hash` text NOT NULL, `ping_t` int(15) NOT NULL, `status`"
 	"int(11) NOT NULL DEFAULT 0);", -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Sqlite can't create nodes table.\n");
