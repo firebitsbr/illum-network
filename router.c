@@ -23,6 +23,7 @@ struct headers {
 struct functions {
 	unsigned int id;
 	void (*name)();
+	bool call;
 };
 /**
 *	Прототипы приватных функций
@@ -71,12 +72,12 @@ bool illrouter_init(illrouter *illr, illdb *database, FILE *errf)
 static void illrouter_readroute(char *json, char *ipaddr)
 {
 	struct functions func[] = {
-		{ILL_BEFRIENDS, illrouter_befriends},
-		{ILL_STRAIGHT, illrouter_straight},
-		{ILL_NEWNODE, illrouter_newnode},
-		{ILL_ONION, illrouter_onion},
-		{ILL_PING, illrouter_ping},
-		{ILL_STAT, illrouter_stat},
+		{ILL_BEFRIENDS, illrouter_befriends, true},
+		{ILL_STRAIGHT, illrouter_straight, true},
+		{ILL_NEWNODE, illrouter_newnode, true},
+		{ILL_ONION, illrouter_onion, false},
+		{ILL_PING, illrouter_ping, false},
+		{ILL_STAT, illrouter_stat, false}
 	};
 	unsigned int type = FUNCNULL, i;
 	json_object *jobj;
@@ -103,8 +104,8 @@ static void illrouter_readroute(char *json, char *ipaddr)
 				}
 	}
 
-	if (type != FUNCNULL && func[type].name
-		&& func[type].name != NULL)
+	if (type != FUNCNULL && func[type].name && (func[type].call
+		|| db->isset_node(ipaddr, NULL, 1)))
 		func[type].name(jobj, ipaddr);
 
 exit_create:
@@ -129,7 +130,7 @@ static void illrouter_newroute(enum illheader type, char *ipaddr)
 	}
 
 	jobj = json_object_new_object();
-	nodenum = db->nodenum(errfile);
+	nodenum = db->nodenum();
 	hash = "hghghghghghghghg";
 
 	json_object_object_add(jobj, "nodenum", json_object_new_int(nodenum));
@@ -142,8 +143,10 @@ static void illrouter_newroute(enum illheader type, char *ipaddr)
 	}
 
 	json = (char *)json_object_to_json_string(jobj);
-	db->newtask(ipaddr, NULL, json, errfile);
-	json_object_put(jobj);
+	db->newtask(ipaddr, NULL, json);
+
+	if (jobj && jobj != NULL)
+		json_object_put(jobj);
 }
 /**
 *	illrouter_decode - Функция считывания json елементов.
@@ -214,13 +217,13 @@ static void illrouter_newnode(json_object *jobj, char *ipaddr)
 		return;
 	}
 
-	list = db->nodelist(&len, errfile);
+	list = db->nodelist(&len);
 	if (len < MAXNODES) {
 		ipc = (msg.ipaddr && strlen(msg.ipaddr) >= 7)
 			? msg.ipaddr : ipaddr;
 
-		if (!db->isset_node(ipc, msg.hash, 2, errfile)) {
-			db->newnode(ipc, msg.hash, 10, errfile);
+		if (!db->isset_node(ipc, NULL, 2)) {
+			db->newnode(ipc, msg.hash);
 			illrouter_newroute(ILL_BEFRIENDS, ipc);
 		}
 	}
@@ -241,7 +244,7 @@ static void illrouter_newnode(json_object *jobj, char *ipaddr)
 	for (int i = 0; i < len; i++)
 		if (list[i].ipaddr && strlen(list[i].ipaddr) >= 7
 			&& list[i].ipaddr != ipaddr) {
-			db->newtask(list[i].ipaddr, NULL, headers, errfile);
+			db->newtask(list[i].ipaddr, NULL, headers);
 			free(list[i].ipaddr);
 			free(list[i].hash);
 		}
@@ -253,7 +256,7 @@ exit_newnode:
 		free(list);
 }
 /**
-*	illrouter_newnode - Функция создания маршрута для
+*	illrouter_ping - Функция создания маршрута для
 *	проверки ноды, в сети или нет.
 *
 *	@jobj - Json объект маршрута.
@@ -267,11 +270,16 @@ static void illrouter_ping(json_object *jobj, char *ipaddr)
 		fprintf(errfile, "Error: Invalid json object(2).\n");
 		return;
 	}
+	if (!illrouter_decode(jobj, &msg)
+		|| !db->isset_node(ipaddr, NULL, 1)) {
+		fprintf(errfile, "Warring: Except in ping.\n");
+		return;
+	}
 
-	illrouter_decode(jobj, &msg);
+
 }
 /**
-*	illrouter_newnode - Функция создания маршрута для
+*	illrouter_stat - Функция создания маршрута для
 *	сбора статистики сети.
 *
 *	@jobj - Json объект маршрута.
@@ -304,24 +312,24 @@ static void illrouter_befriends(json_object *jobj, char *ipaddr)
 		return;
 	}
 	if (!illrouter_decode(jobj, &msg)
-		|| db->isset_node(ipaddr, msg.hash, 1, errfile)) {
+		|| db->isset_node(ipaddr, NULL, 1)) {
 		fprintf(errfile, "Warring: Except in befriends.\n");
 		return;
 	}
-	if (db->nodenum(errfile) < MAXNODES)
+	if (db->nodenum(errfile) >= MAXNODES)
 		return;
 	
-	if (db->isset_node(ipaddr, msg.hash, 0, errfile)) {
-		db->staticnode(msg.hash, errfile);
+	if (db->isset_node(ipaddr, NULL, 0)) {
+		db->staticnode(msg.hash);
 		illrouter_newroute(ILL_BEFRIENDS, ipaddr);
 		return;
 	}
 
-	db->newnode(ipaddr, msg.hash, 10, errfile);
+	db->newnode(ipaddr, msg.hash);
 	illrouter_newroute(ILL_BEFRIENDS, ipaddr);
 }
 /**
-*	illrouter_newnode - Функция создания маршрута для
+*	illrouter_straight - Функция создания маршрута для
 *	отправки обычного сообщения.
 *
 *	@jobj - Json объект маршрута.
@@ -332,7 +340,7 @@ static void illrouter_straight(json_object *jobj, char *ipaddr)
 
 }
 /**
-*	illrouter_newnode - Функция создания маршрута для
+*	illrouter_onion - Функция создания маршрута для
 *	отправки сообщения через луковую маршрутизацию.
 *
 *	@jobj - Json объект маршрута.
