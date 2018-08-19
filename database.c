@@ -9,14 +9,16 @@
 *	Прототипы приватных функций
 */
 static bool illdb_issetnode(char *, char *, unsigned int);
+static struct node_list *illdb_nodelist(unsigned int *);
 static int	illdb_settask(char *, char *, char *);
-struct node_list *illdb_nodelist(unsigned int *);
+static struct node_list illdb_nodeinfo(char *);
 static void illdb_currenttask(struct stask *);
 static bool illdb_issettask(char *, char *);
 static bool	illdb_removetask(unsigned int);
 static bool	illdb_newnode(char *, char *);
 static void illdb_staticnode(char *);
 static void illdb_removecache();
+static void illdb_ping(char *);
 static int	illdb_nodenum();
 static bool	illdb_tables();
 /**
@@ -52,16 +54,19 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errfile)
 	dbstruct->currenttask = illdb_currenttask;
 	dbstruct->staticnode = illdb_staticnode;
 	dbstruct->removetask = illdb_removetask;
+	dbstruct->isset_node = illdb_issetnode;
 	dbstruct->nodelist = illdb_nodelist;
+	dbstruct->nodeinfo = illdb_nodeinfo;
 	dbstruct->newtask = illdb_settask;
 	dbstruct->newnode = illdb_newnode;
 	dbstruct->nodenum = illdb_nodenum;
-	dbstruct->isset_node = illdb_issetnode;
+	dbstruct->ping = illdb_ping;
 
 	if (dbstruct->removetask && dbstruct->nodelist
 		&& dbstruct->newtask && dbstruct->newnode
 		&& dbstruct->currenttask && dbstruct->nodenum
-		&& dbstruct->staticnode && dbstruct->isset_node)
+		&& dbstruct->staticnode && dbstruct->isset_node
+		&& dbstruct->nodeinfo && dbstruct->ping)
 		status = true;
 
 	return status;
@@ -70,7 +75,6 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errfile)
 *	illdb_removetask - Функция удаления задания из базы данных.
 *
 *	@id - Id задания в базе данных.
-*	@errf - Файловый стрим для записи ошибок.
 */
 static bool illdb_removetask(unsigned int id)
 {
@@ -97,11 +101,40 @@ exit_removetask:
 	return status;
 }
 /**
+*	illdb_ping - Функция обновления времени последнего запроса.
+*
+*	@ipaddr - Ip ноды.
+*/
+static void illdb_ping(char *ipaddr)
+{
+	sqlite3_stmt *rs = NULL;
+	unsigned int len = 0;
+	time_t ping;
+	char *sql;
+
+	if (!ipaddr || ipaddr == NULL || (len = strlen(ipaddr)) < 7
+		|| len > 100) {
+		fprintf(errf, "Error: Incorrect ip in illdb_ping.\n");
+		return;
+	}
+
+	ping = time(NULL);
+	sql = (char *)malloc(len + 100);
+	sprintf(sql, "UPDATE `nodes` SET `ping_t`='%ld' WHERE "
+		"`ip`='%s' AND `status`='1';", ping, ipaddr);
+
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+	sqlite3_step(rs);
+
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	free(sql);
+}
+/**
 *	illdb_staticnode - Функция подтверждения статического подключения
 *	между нодами.
 *
 *	@hash - Хэш ноды.
-*	@errf - Файловый стрим для записи ошибок.
 */
 static void illdb_staticnode(char *hash)
 {
@@ -148,7 +181,6 @@ static void illdb_removecache()
 *	@ipaddr - Ip адрес получателя сообщения.
 *	@hash - Ключ ноды для распознования в сети.
 *	@id - Тип фильтрации ноды.
-*	@errf - Файловый стрим для записи ошибок.
 */
 static bool illdb_issetnode(char *ipaddr, char *hash, unsigned int id)
 {
@@ -157,7 +189,8 @@ static bool illdb_issetnode(char *ipaddr, char *hash, unsigned int id)
 	sqlite3_stmt *rs = NULL;
 	unsigned int len = 0;
 
-	if (ipaddr && ipaddr != NULL && strlen(ipaddr) > 6) {
+	if (ipaddr && ipaddr != NULL && strlen(ipaddr) > 6
+		&& strlen(ipaddr) < 100) {
 		value = ipaddr;
 		type = true;
 	}
@@ -191,13 +224,54 @@ static bool illdb_issetnode(char *ipaddr, char *hash, unsigned int id)
 	return status;
 }
 /**
+*	illdb_nodeinfo - Функция получения информации о конкретной
+*	ноде в бд.
+*
+*	@ipaddr - Ip адрес ноды.
+*/
+static struct node_list illdb_nodeinfo(char *ipaddr)
+{
+	struct node_list node;
+	sqlite3_stmt *rs = NULL;
+	unsigned int len = 0;
+	char *sql;
+
+	if (!ipaddr || ipaddr == NULL || (len = strlen(ipaddr)) < 7
+		|| len > 100) {
+		fprintf(errf, "Error: Incorrect ip in nodeinfo\n");
+		node.hash = NULL;
+		return node;
+	}
+
+	sql = (char *)malloc(len + 100);
+	sprintf(sql, "SELECT * FROM `nodes` WHERE `ip`='%s' "
+		"AND `status`='1';", ipaddr);
+
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_ROW) {
+		fprintf(errf, "Waring: Node doesn't exist (nodeinfo)\n");
+		node.hash = NULL;
+		goto exit_nodeinfo;
+	}
+
+	node.ping = atol((const char *)sqlite3_column_text(rs, 3));
+	node.id = atoi((const char *)sqlite3_column_text(rs, 0));
+	node.ipaddr = (char *)sqlite3_column_text(rs, 1);
+	node.hash = (char *)sqlite3_column_text(rs, 2);
+
+exit_nodeinfo:
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	free(sql);
+	return node;
+}
+/**
 *	illdb_newnode - Функция занесения новой ноды в базу данных.
 *
 *	@ipaddr - Ip адрес получателя сообщения.
 *	@hash - Ключ ноды для распознования в сети.
 *	@text - Текст сообщения.
 *	@mseconds - Время отклика узла.
-*	@errf - Файловый стрим для записи ошибок.
 */
 static bool illdb_newnode(char *ipaddr, char *hash)
 {
@@ -242,7 +316,7 @@ exit_newnode:
 *	illdb_currenttask - Функция извлекающая текущее задание для
 *	сервера.
 *
-*	@errf - Файловый стрим для записи ошибок.
+*	@data - Указатель для записи заданий.
 */
 static void illdb_currenttask(struct stask *data)
 {
@@ -275,9 +349,8 @@ exit_currenttask:
 *	illdb_nodelist - Функция извлекающая из базы список всех нод.
 *
 *	@num - Количество нод в базе.
-*	@errf - Файловый стрим для записи ошибок.
 */
-struct node_list *illdb_nodelist(unsigned int *num)
+static struct node_list *illdb_nodelist(unsigned int *num)
 {
 	struct node_list *data = NULL;
 	sqlite3_stmt *rs = NULL;
@@ -296,7 +369,7 @@ struct node_list *illdb_nodelist(unsigned int *num)
 		if (i > (*num) - 1)
 			break;
 
-		data[i].ping = atoi((const char *)sqlite3_column_text(rs, 3));
+		data[i].ping = atol((const char *)sqlite3_column_text(rs, 3));
 		data[i].id = atoi((const char *)sqlite3_column_text(rs, 0));
 		data[i].ipaddr = (char *)malloc(16);
 		data[i].hash = (char *)malloc(100);
@@ -319,7 +392,6 @@ exit_nodelist:
 *
 *	@ipaddr - Ip адрес получателя сообщения.
 *	@headers - Заголовки к сообщению.
-*	@errf - Файловый стрим для записи ошибок.
 */
 static bool illdb_issettask(char *ipaddr, char *headers)
 {
@@ -356,7 +428,6 @@ static bool illdb_issettask(char *ipaddr, char *headers)
 *	@ipaddr - Ip адрес получателя сообщения.
 *	@text - Текст сообщения.
 *	@headers - Заголовки к сообщению.
-*	@errf - Файловый стрим для записи ошибок.
 */
 static int illdb_settask(char *ipaddr, char *text, char *headers)
 {
@@ -403,8 +474,6 @@ exit_settask:
 }
 /**
 *	illdb_nodenum - Функция подсчета количества нод.
-*
-*	@errf - Файловый стрим для записи ошибок.
 */
 static int illdb_nodenum()
 {
@@ -426,8 +495,6 @@ exit_nodenum:
 }
 /**
 *	illdb_tables - Функция создания базы данных проекта.
-*
-*	@errf - Файловый стрим для записи ошибок.
 */
 static bool illdb_tables()
 {
