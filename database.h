@@ -18,14 +18,16 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <string.h>
+#include <time.h>
 #include <sqlite3.h>
-#define MAX_TEXTSIZE 1000
+#define MAX_TEXTSIZE 9000
 /**
 *	Доступные структуры
 */
 struct node_list {
 	char *ipaddr, *hash, *cert;
-	unsigned int id, mseconds;
+	unsigned long ping;
+	unsigned int id;
 };
 
 struct stask {
@@ -34,10 +36,10 @@ struct stask {
 };
 
 typedef struct {
-	bool (*removetask)(), (*newnode)();
-	struct node_list *(*nodelist)();
+	bool (*removetask)(), (*newnode)(), (*isset_node)();
+	void (*currenttask)(), (*staticnode)(), (*ping)();
+	struct node_list *(*nodelist)(), (*nodeinfo)();
 	int (*newtask)(), (*nodenum)();
-	void (*currenttask)();
 	char *(*setting)();
 } illdb;
 /**
