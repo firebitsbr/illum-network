@@ -264,7 +264,9 @@ exit_newnode:
 */
 static void illrouter_ping(json_object *jobj, char *ipaddr)
 {
+	struct node_list node;
 	struct headers msg;
+	time_t ntime;
 	
 	if (!jobj || jobj == NULL) {
 		fprintf(errfile, "Error: Invalid json object(2).\n");
@@ -276,7 +278,15 @@ static void illrouter_ping(json_object *jobj, char *ipaddr)
 		return;
 	}
 
+	node = db->nodeinfo(ipaddr);
+	ntime = time(NULL);
 
+	if (node.hash == NULL
+		|| (unsigned long)ntime - node.ping < 10000)
+		return;
+
+	db->ping(ipaddr);
+	illrouter_newroute(ILL_PING, ipaddr);
 }
 /**
 *	illrouter_stat - Функция создания маршрута для
