@@ -12,6 +12,9 @@
 #include <stdbool.h>
 #include <string.h>
 #include <json-c/json.h>
+#include <time.h>
+#include "./database.h"
+#define MAXNODES 180
 /**
 *	Доступные структуры
 */
@@ -19,6 +22,9 @@ enum illheader {
 	ILL_NEWNODE = 0, ILL_PING = 1, ILL_STAT = 2,
 	ILL_BEFRIENDS = 3, ILL_STRAIGHT = 10, ILL_ONION = 11
 /*
+	ILL_NEWNODE и ILL_STRAIGHT единственные доступные
+	типы сообщений без статического соединения
+
 	ILLH_FREENODES = 0, ILLH_UPDNODES = 1,
 	ILLH_MESSAGE = 2, ILLH_PING = 3,
 	ILLH_ONION = 10, ILLH_STRAIGHT = 11,
@@ -32,5 +38,5 @@ typedef struct {
 /**
 *	Доступные функции
 */
-bool illrouter_init(illrouter *, FILE *);
+bool illrouter_init(illrouter *, illdb *, FILE *);
 #endif
