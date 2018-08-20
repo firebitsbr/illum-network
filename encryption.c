@@ -54,8 +54,10 @@ static struct userkeys illenc_getkeys()
 	char *public, *secret;
 	struct userkeys keys;
 
-	if ((public = db->getvar("PUBLICKEY")) != NULL
-		&& (secret = db->getvar("SECRETKEY")) != NULL) {
+	public = db->getvar("PUBLICKEY");
+	secret = db->getvar("SECRETKEY");
+
+	if (public != NULL && secret != NULL) {
 		keys->public = illenc_hex2byte(public);
 		keys->secret = illenc_hex2byte(secret);
 
@@ -66,8 +68,8 @@ static struct userkeys illenc_getkeys()
 	public = illenc_byte2hex(keys->public, cbl.publickey);
 	secret = illenc_byte2hex(keys->secret, cbl.secretkey);
 
-	db->setkey("PUBLICKEY", public);
-	db->setkey("SECRETKEY", secret);
+	db->setvar("PUBLICKEY", public);
+	db->setvar("SECRETKEY", secret);
 
 exit_getkeys:
 	free(public);
