@@ -36,11 +36,12 @@ struct stask {
 };
 
 typedef struct {
-	bool (*removetask)(), (*newnode)(), (*isset_node)();
+	bool (*removetask)(), (*newnode)(), (*isset_node)(),
+		(*setvar)();
 	void (*currenttask)(), (*staticnode)(), (*ping)();
 	struct node_list *(*nodelist)(), (*nodeinfo)();
+	char *(*setting)(), *(*getvar)();
 	int (*newtask)(), (*nodenum)();
-	char *(*setting)();
 } illdb;
 /**
 *	Доступные функции
