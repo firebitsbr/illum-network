@@ -16,7 +16,9 @@ static void illdb_currenttask(struct stask *);
 static bool illdb_issettask(char *, char *);
 static bool	illdb_removetask(unsigned int);
 static bool	illdb_newnode(char *, char *);
+static bool illdb_setvar(char *, char *);
 static void illdb_staticnode(char *);
+static char *illdb_getvar(char *);
 static void illdb_removecache();
 static void illdb_ping(char *);
 static int	illdb_nodenum();
@@ -60,6 +62,8 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errfile)
 	dbstruct->newtask = illdb_settask;
 	dbstruct->newnode = illdb_newnode;
 	dbstruct->nodenum = illdb_nodenum;
+	dbstruct->getvar = illdb_getvar;
+	dbstruct->setvar = illdb_setvar;
 	dbstruct->ping = illdb_ping;
 
 	if (dbstruct->removetask && dbstruct->nodelist
@@ -124,7 +128,8 @@ static void illdb_ping(char *ipaddr)
 		"`ip`='%s' AND `status`='1';", ping, ipaddr);
 
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
-	sqlite3_step(rs);
+	if (sqlite3_step(rs) != SQLITE_DONE)
+		fprintf(errf, "Error: Can't update ping time.\n");
 
 	if (rs && rs != NULL)
 		sqlite3_finalize(rs);
@@ -492,6 +497,91 @@ exit_nodenum:
 	if (rs && rs != NULL)
 		sqlite3_finalize(rs);
 	return number;
+}
+/**
+*	illdb_getvar - Функция получения переменной из таблицы
+*	настроек.
+*
+*	@name - Ip адрес получателя сообщения.
+*/
+static char *illdb_getvar(char *name)
+{
+	sqlite3_stmt *rs = NULL;
+	char *sql, *var = NULL;
+	unsigned int len = 0;
+
+	if (!name || name == NULL || (len = strlen(name)) < 2
+		|| len > 20) {
+		fprintf(errf, "Error: Incorrect option in getvar.\n");
+		return var;
+	}
+
+	sql = (char *)malloc(len + 100);
+	sprintf(sql, "SELECT `value` FROM `settings` WHERE `name`='%s'",
+		name);
+
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_ROW) {
+		fprintf(errf, "Error: Can't get var from db.\n");
+		goto exit_getvar;
+	}
+
+	var = (char *)sqlite3_column_text(rs, 0);
+
+exit_getvar:
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	free(sql);
+
+	return var;
+}
+/**
+*	illdb_setvar - Функция записи значения в таблицу
+*	настроек.
+*
+*	@name - Ip адрес получателя сообщения.
+*	@value - Значение для записи.
+*/
+static bool illdb_setvar(char *name, char *value)
+{
+	unsigned int len1 = 0, len2 = 0;
+	sqlite3_stmt *rs = NULL;
+	bool status = false;
+	char *sql;
+
+	if (!name || (len1 = strlen(name)) < 2 || len1 > 20
+		|| !value || (len2 = strlen(value)) < 2
+		|| len2 > 20) {
+		fprintf(errf, "Error: Incorrect option in getvar.\n");
+		return status;
+	}
+
+	sql = (char *)malloc(len1 + len2 + 100);
+	sprintf(sql, "DELETE FROM `settings` WHERE `name`='%s'",
+		name);
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_DONE) {
+		fprintf(errf, "Error: Can't remove data from settings.\n");
+		goto exit_setvar;
+	}
+
+	memset(sql, '\0', strlen(sql));
+	sprintf(sql, "INSERT INTO `settings` VALUES ('%s', '%s');",
+		name, value);
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_DONE) {
+		fprintf(errf, "Error: Can't set data in settings.\n");
+		goto exit_setvar;
+	}
+
+	status = true;
+
+exit_setvar:
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	free(sql);
+
+	return status;
 }
 /**
 *	illdb_tables - Функция создания базы данных проекта.
