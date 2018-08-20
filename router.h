@@ -2,6 +2,11 @@
 *	router.h - Заголовочный файл для router.c с перечнем
 *	всех функций и структур.
 *
+*	Пример инициализации модуля:
+*	illdb db;
+*	illroute router;
+*	illrouter_init(&router, &db, file_stream);
+*
 *	@mrrva - 2018
 */
 #ifndef ILL_ROUTER
@@ -15,6 +20,7 @@
 #include <time.h>
 #include "./database.h"
 #define MAXNODES 180
+#define UPDTIME 10000
 /**
 *	Доступные структуры
 */
@@ -33,7 +39,7 @@ enum illheader {
 };
 
 typedef struct {
-	void (*read)(), (*new)();
+	void (*read)(), (*new)(), (*updnodes)(bool);
 } illrouter;
 /**
 *	Доступные функции
