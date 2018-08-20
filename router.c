@@ -28,17 +28,16 @@ struct functions {
 /**
 *	Прототипы приватных функций
 */
-/*static bool illrouter_mkclearhdr(struct node_list *, unsigned int,
-	char *, char *, enum illheader);*/
+static void illrouter_befriends(json_object *, struct headers, char *);
+static void illrouter_straight(json_object *, struct headers, char *);
+static void illrouter_newnode(json_object *, struct headers, char *);
+static void illrouter_onion(json_object *, struct headers, char *);
+static void illrouter_ping(json_object *, struct headers, char *);
+static void illrouter_stat(json_object *, struct headers, char *);
 static bool illrouter_decode(json_object *, struct headers *);
 static void illrouter_newroute(enum illheader, char *);
-static void illrouter_befriends(json_object *, char *);
-static void illrouter_straight(json_object *, char *);
-static void illrouter_newnode(json_object *, char *);
-static void illrouter_onion(json_object *, char *);
-static void illrouter_ping(json_object *, char *);
-static void illrouter_stat(json_object *, char *);
 static void illrouter_readroute(char *, char *);
+static void illrouter_updnodes(bool);
 /**
 *	Приватные переменные
 */
@@ -56,10 +55,11 @@ bool illrouter_init(illrouter *illr, illdb *database, FILE *errf)
 	if (!(errfile = errf) || !(db = database) || errfile == NULL)
 		return false;
 
+	illr->updnodes = illrouter_updnodes;
 	illr->read = illrouter_readroute;
 	illr->new = illrouter_newroute;
 
-	if (!illr->read || !illr->new)
+	if (!illr->read || !illr->new || !illr->updnodes)
 		return false;
 	return true;
 }
@@ -79,7 +79,8 @@ static void illrouter_readroute(char *json, char *ipaddr)
 		{ILL_PING, illrouter_ping, false},
 		{ILL_STAT, illrouter_stat, false}
 	};
-	unsigned int type = FUNCNULL, i;
+	unsigned int type = FUNCNULL;
+	struct headers msg;
 	json_object *jobj;
 
 	if (!(jobj = json_tokener_parse(json)) || !ipaddr
@@ -87,26 +88,19 @@ static void illrouter_readroute(char *json, char *ipaddr)
 		fprintf(errfile, "Error: Invalid json string or ip.\n");
 		goto exit_create;
 	}
-
-	json_object_object_foreach (jobj, key, value) {
-		if (strlen((const char *)value) < 1 
-			|| strlen((const char *)key) > 10
-			|| strlen((const char *)key) < 4) {
-			fprintf(errfile, "Error: Can't decode json(1).\n");
-			goto exit_create;
-		}
-
-		if (strcmp(key, "type") == 0)
-			for (i = 0; i < 5; i++)
-				if (func[i].id == json_object_get_int(value)) {
-					type = i;
-					break;
-				}
+	if (!illrouter_decode(jobj, &msg)) {
+		fprintf(errfile, "Error: Can't decode json.\n");
+		goto exit_create;
 	}
 
+	for (int i = 0; i < 6; i++) 
+		if (func[i].id == msg.type) {
+			type = i;
+			break;
+		}
 	if (type != FUNCNULL && func[type].name && (func[type].call
 		|| db->isset_node(ipaddr, NULL, 1)))
-		func[type].name(jobj, ipaddr);
+		func[type].name(jobj, msg, ipaddr);
 
 exit_create:
 	if (jobj && jobj != NULL)
@@ -201,19 +195,15 @@ static bool illrouter_decode(json_object *jobj, struct headers *msg)
 *	@jobj - Json объект маршрута.
 *	@ipaddr - Ip с которого пришел запрос.
 */
-static void illrouter_newnode(json_object *jobj, char *ipaddr)
+static void illrouter_newnode(json_object *jobj, struct headers msg,
+	char *ipaddr)
 {
 	struct node_list *list;
 	char *headers, *ipc;
-	struct headers msg;
 	unsigned int len;
 
 	if (!jobj || jobj == NULL || !ipaddr || ipaddr == NULL) {
 		fprintf(errfile, "Warring: Invalid json object(1).\n");
-		return;
-	}
-	if (!illrouter_decode(jobj, &msg)) {
-		fprintf(errfile, "Warring: Can't decode json(3).\n");
 		return;
 	}
 
@@ -262,18 +252,17 @@ exit_newnode:
 *	@jobj - Json объект маршрута.
 *	@ipaddr - Ip с которого пришел запрос.
 */
-static void illrouter_ping(json_object *jobj, char *ipaddr)
+static void illrouter_ping(json_object *jobj, struct headers msg,
+	char *ipaddr)
 {
 	struct node_list node;
-	struct headers msg;
 	time_t ntime;
-	
+
 	if (!jobj || jobj == NULL) {
 		fprintf(errfile, "Error: Invalid json object(2).\n");
 		return;
 	}
-	if (!illrouter_decode(jobj, &msg)
-		|| !db->isset_node(ipaddr, NULL, 1)) {
+	if (!db->isset_node(ipaddr, NULL, 1)) {
 		fprintf(errfile, "Warring: Except in ping.\n");
 		return;
 	}
@@ -282,7 +271,7 @@ static void illrouter_ping(json_object *jobj, char *ipaddr)
 	ntime = time(NULL);
 
 	if (node.hash == NULL
-		|| (unsigned long)ntime - node.ping < 10000)
+		|| (unsigned long)ntime - node.ping < UPDTIME)
 		return;
 
 	db->ping(ipaddr);
@@ -295,16 +284,10 @@ static void illrouter_ping(json_object *jobj, char *ipaddr)
 *	@jobj - Json объект маршрута.
 *	@ipaddr - Ip с которого пришел запрос.
 */
-static void illrouter_stat(json_object *jobj, char *ipaddr)
+static void illrouter_stat(json_object *jobj, struct headers msg,
+	char *ipaddr)
 {
-	struct headers msg;
-	
-	if (!jobj || jobj == NULL) {
-		fprintf(errfile, "Error: Invalid json object(3).\n");
-		return;
-	}
 
-	illrouter_decode(jobj, &msg);
 }
 /**
 *	illrouter_befriends - Функция создания маршрута для
@@ -313,16 +296,14 @@ static void illrouter_stat(json_object *jobj, char *ipaddr)
 *	@jobj - Json объект маршрута.
 *	@ipaddr - Ip с которого пришел запрос.
 */
-static void illrouter_befriends(json_object *jobj, char *ipaddr)
+static void illrouter_befriends(json_object *jobj, struct headers msg,
+	char *ipaddr)
 {
-	struct headers msg;
-
 	if (!jobj || jobj == NULL || !ipaddr || ipaddr == NULL) {
 		fprintf(errfile, "Warring: Invalid json object(1).\n");
 		return;
 	}
-	if (!illrouter_decode(jobj, &msg)
-		|| db->isset_node(ipaddr, NULL, 1)) {
+	if (db->isset_node(ipaddr, NULL, 1)) {
 		fprintf(errfile, "Warring: Except in befriends.\n");
 		return;
 	}
@@ -345,7 +326,8 @@ static void illrouter_befriends(json_object *jobj, char *ipaddr)
 *	@jobj - Json объект маршрута.
 *	@ipaddr - Ip с которого пришел запрос.
 */
-static void illrouter_straight(json_object *jobj, char *ipaddr)
+static void illrouter_straight(json_object *jobj, struct headers msg,
+	char *ipaddr)
 {
 
 }
@@ -356,7 +338,41 @@ static void illrouter_straight(json_object *jobj, char *ipaddr)
 *	@jobj - Json объект маршрута.
 *	@ipaddr - Ip с которого пришел запрос.
 */
-static void illrouter_onion(json_object *jobj, char *ipaddr)
+static void illrouter_onion(json_object *jobj, struct headers msg,
+	char *ipaddr)
 {
 
+}
+/**
+*	illrouter_updnodes - Функция проверки подключений.
+*
+*	@use_time - Обращать ли внемание на время ping.
+*/
+static void illrouter_updnodes(bool use_time)
+{
+	struct node_list *nodes;
+	unsigned int len;
+	time_t ntime;
+
+	nodes = db->nodelist(&len);
+	ntime = time(NULL);
+
+	if (len == 0 || !nodes || nodes == NULL)
+		return;
+
+	for (int i = 0; i < len; i++) {
+		if (use_time) {
+			if ((unsigned long)ntime - nodes[i].ping
+				> UPDTIME)
+				db->ping(nodes[i].ipaddr);
+		}
+		else {
+			db->ping(nodes[i].ipaddr);
+		}
+
+		free(nodes[i].ipaddr);
+		free(nodes[i].hash);
+	}
+
+	free(nodes);
 }
