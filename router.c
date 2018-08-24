@@ -42,6 +42,7 @@ static void illrouter_updnodes(bool);
 *	Приватные переменные
 */
 static FILE *errfile;
+static illenc *encrpt;
 static illdb *db;
 /**
 *	illrouter_init - Функция инициализации модуля
@@ -50,9 +51,11 @@ static illdb *db;
 *	@illr - Главная управляющая структура.
 *	@errf - Файловый стрим для записи ошибок.
 */
-bool illrouter_init(illrouter *illr, illdb *database, FILE *errf)
+bool illrouter_init(illrouter *illr, illdb *database, illenc *enc,
+	FILE *errf)
 {
-	if (!(errfile = errf) || !(db = database) || errfile == NULL)
+	if (!(errfile = errf) || !(db = database) || errfile == NULL
+		|| !(encrpt = enc))
 		return false;
 
 	illr->updnodes = illrouter_updnodes;
@@ -124,8 +127,8 @@ static void illrouter_newroute(enum illheader type, char *ipaddr)
 	}
 
 	jobj = json_object_new_object();
+	hash = encrpt->publickey();
 	nodenum = db->nodenum();
-	hash = "hghghghghghghghg";
 
 	json_object_object_add(jobj, "nodenum", json_object_new_int(nodenum));
 	json_object_object_add(jobj, "ipaddr", json_object_new_string(""));
