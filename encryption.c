@@ -10,14 +10,16 @@
 */
 static char *illenc_byte2hex(uint8_t [], unsigned int);
 static void illenc_cbconstants(struct cryptobox_d *);
-static struct userkeys illenc_genkeys();
+static void illenc_genkeys(struct userkeys *);
 static uint8_t *illenc_hex2byte(char *);
+static char *illenc_publickey();
 /**
 *	Глобальные переменные
 */
 static struct cryptobox_d cbl;
-static sqlite3 *db;
+struct userkeys *pkeys;
 static FILE *errf;
+static illdb *db;
 /**
 *	illenc_init - Функция инициализации модуля
 *	шифрации.
@@ -35,46 +37,46 @@ bool illenc_init(illenc *enc, illdb *dbstruct, FILE *errfile)
 		return status;
 	}
 
+	illenc_genkeys(&enc->keys);
 	illenc_cbconstants(&cbl);
-	enc->keys = illenc_getkeys();
+	pkeys = &enc->keys;
 
+	enc->publickey = illenc_publickey;
 	enc->hex2byte = illenc_hex2byte;
 	enc->byte2hex = illenc_byte2hex;
 
-	if (enc->hex2byte && enc->byte2hex)
+	if (enc->hex2byte && enc->byte2hex && enc->publickey)
 		status = true;
 
 	return status;
 }
 /**
-*	illenc_getkeys - Функция записи пар ключей шифрации.
+*	illenc_genkeys - Функция записи пар ключей шифрации.
+*
+*	@keys - Структура хранения ключей.
 */
-static struct userkeys illenc_getkeys()
+static void illenc_genkeys(struct userkeys *keys)
 {
 	char *public, *secret;
-	struct userkeys keys;
 
 	public = db->getvar("PUBLICKEY");
 	secret = db->getvar("SECRETKEY");
 
 	if (public != NULL && secret != NULL) {
-		keys->public = illenc_hex2byte(public);
-		keys->secret = illenc_hex2byte(secret);
-
-		goto exit_getkeys;
+		memcpy(keys->public, illenc_hex2byte(public), cbl.publickey);
+		memcpy(keys->secret, illenc_hex2byte(secret), cbl.secretkey);
+		goto exit_genkeys;
 	}
 
 	crypto_box_keypair(keys->public, keys->secret);
 	public = illenc_byte2hex(keys->public, cbl.publickey);
 	secret = illenc_byte2hex(keys->secret, cbl.secretkey);
-
 	db->setvar("PUBLICKEY", public);
 	db->setvar("SECRETKEY", secret);
 
-exit_getkeys:
+exit_genkeys:
 	free(public);
 	free(secret);
-	return keys;
 }
 /**
 *	illenc_cbconstants - Функция записи констант от crypto
@@ -147,4 +149,11 @@ static uint8_t *illenc_hex2byte(char *string)
 	}
 
 	return data;
+}
+/**
+*	illenc_publickey - Функция возврата публичного ключа / логина.
+*/
+static char *illenc_publickey()
+{
+	return illenc_byte2hex(pkeys->public, cbl.publickey);
 }
