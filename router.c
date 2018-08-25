@@ -28,15 +28,16 @@ struct functions {
 /**
 *	Прототипы приватных функций
 */
-static void illrouter_befriends(json_object *, struct headers, char *);
-static void illrouter_straight(json_object *, struct headers, char *);
-static void illrouter_newnode(json_object *, struct headers, char *);
-static void illrouter_onion(json_object *, struct headers, char *);
-static void illrouter_ping(json_object *, struct headers, char *);
-static void illrouter_stat(json_object *, struct headers, char *);
+static void illrouter_befriends(json_object *, struct headers, char *, char *);
+static void illrouter_straight(json_object *, struct headers, char *, char *);
+static void illrouter_newnode(json_object *, struct headers, char *, char *);
+static void illrouter_onion(json_object *, struct headers, char *, char *);
+static void illrouter_ping(json_object *, struct headers, char *, char *);
+static void illrouter_stat(json_object *, struct headers, char *, char *);
 static bool illrouter_decode(json_object *, struct headers *);
 static void illrouter_newroute(enum illheader, char *);
 static void illrouter_readroute(char *, char *);
+static char **illrouter_explode(char *);
 static void illrouter_updnodes(bool);
 /**
 *	Приватные переменные
@@ -72,7 +73,7 @@ bool illrouter_init(illrouter *illr, illdb *database, illenc *enc,
 *
 *	@json - Json массив с инструкциями маршрута.
 */
-static void illrouter_readroute(char *json, char *ipaddr)
+static void illrouter_readroute(char *data, char *ipaddr)
 {
 	struct functions func[] = {
 		{ILL_BEFRIENDS, illrouter_befriends, true},
@@ -85,8 +86,15 @@ static void illrouter_readroute(char *json, char *ipaddr)
 	unsigned int type = FUNCNULL;
 	struct headers msg;
 	json_object *jobj;
+	char **content;
 
-	if (!(jobj = json_tokener_parse(json)) || !ipaddr
+	if ((content = illrouter_explode(data)) == NULL) {
+		fprintf(errfile, "Error: Incorrect data in explode.\n");
+		return;
+	}
+	/* Encryption of headers */
+
+	if (!(jobj = json_tokener_parse(content[0])) || !ipaddr
 		|| ipaddr == NULL || strlen(ipaddr) < 7) {
 		fprintf(errfile, "Error: Invalid json string or ip.\n");
 		goto exit_create;
@@ -103,11 +111,47 @@ static void illrouter_readroute(char *json, char *ipaddr)
 		}
 	if (type != FUNCNULL && func[type].name && (func[type].call
 		|| db->isset_node(ipaddr, NULL, 1)))
-		func[type].name(jobj, msg, ipaddr);
+		func[type].name(jobj, msg, ipaddr, content[1]);
 
 exit_create:
 	if (jobj && jobj != NULL)
 		json_object_put(jobj);
+}
+/**
+*	illrouter_explode - Функция разрыва содержимого сообщения.
+*
+*	@content - Содержимое сообщения
+*/
+static char **illrouter_explode(char *content)
+{
+	char **data, *tok, cont[strlen(content) + 1];
+
+	if (strlen(content) > MAX_TEXTSIZE
+		|| !strstr(content, "\r\n\r\n")) {
+		fprintf(errfile, "Error: Can't explode content.\n");
+		return NULL;
+	}
+
+	data = (char **)malloc(sizeof(char *) * 2);
+	memcpy(cont, content, strlen(content) + 1);
+
+	if ((tok = strtok(cont, "\r\n\r\n")) == NULL) {
+		free(data);
+		return NULL;
+	}
+	data[0] = (char *)malloc(strlen(tok) + 1);
+	memcpy(data[0], tok, strlen(tok) + 1);
+
+	if ((tok = strtok(NULL, "\r\n\r\n")) == NULL) {
+		free(data[0]);
+		free(data);
+		return NULL;
+	}
+	data[1] = (char *)malloc(strlen(tok) + 1);
+	memcpy(data[1], tok, strlen(tok) + 1);
+
+	tok = strtok(NULL, "\r\n\r\n");
+	return data;
 }
 /**
 *	illrouter_newroute - Функция создания нового маршрута.
@@ -199,7 +243,7 @@ static bool illrouter_decode(json_object *jobj, struct headers *msg)
 *	@ipaddr - Ip с которого пришел запрос.
 */
 static void illrouter_newnode(json_object *jobj, struct headers msg,
-	char *ipaddr)
+	char *ipaddr, char *content)
 {
 	struct node_list *list;
 	char *headers, *ipc;
@@ -256,7 +300,7 @@ exit_newnode:
 *	@ipaddr - Ip с которого пришел запрос.
 */
 static void illrouter_ping(json_object *jobj, struct headers msg,
-	char *ipaddr)
+	char *ipaddr, char *content)
 {
 	struct node_list node;
 	time_t ntime;
@@ -288,7 +332,7 @@ static void illrouter_ping(json_object *jobj, struct headers msg,
 *	@ipaddr - Ip с которого пришел запрос.
 */
 static void illrouter_stat(json_object *jobj, struct headers msg,
-	char *ipaddr)
+	char *ipaddr, char *content)
 {
 
 }
@@ -300,7 +344,7 @@ static void illrouter_stat(json_object *jobj, struct headers msg,
 *	@ipaddr - Ip с которого пришел запрос.
 */
 static void illrouter_befriends(json_object *jobj, struct headers msg,
-	char *ipaddr)
+	char *ipaddr, char *content)
 {
 	if (!jobj || jobj == NULL || !ipaddr || ipaddr == NULL) {
 		fprintf(errfile, "Warring: Invalid json object(1).\n");
@@ -330,7 +374,7 @@ static void illrouter_befriends(json_object *jobj, struct headers msg,
 *	@ipaddr - Ip с которого пришел запрос.
 */
 static void illrouter_straight(json_object *jobj, struct headers msg,
-	char *ipaddr)
+	char *ipaddr, char *content)
 {
 
 }
@@ -342,7 +386,7 @@ static void illrouter_straight(json_object *jobj, struct headers msg,
 *	@ipaddr - Ip с которого пришел запрос.
 */
 static void illrouter_onion(json_object *jobj, struct headers msg,
-	char *ipaddr)
+	char *ipaddr, char *content)
 {
 
 }
