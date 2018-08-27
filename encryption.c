@@ -10,10 +10,10 @@
 */
 static char *illenc_byte2hex(uint8_t [], unsigned int);
 static void illenc_cbconstants(struct cryptobox_d *);
+static char *illenc_encrypt(unsigned char *, char *);
 static void illenc_rbytes(uint8_t [], long long);
 static void illenc_genkeys(struct userkeys *);
 static char *illenc_decrypt(char *, char *);
-static char *illenc_encrypt(char *, char *);
 static uint8_t *illenc_hex2byte(char *);
 static char *illenc_publickey();
 /**
@@ -194,7 +194,7 @@ static char *illenc_decrypt(char *hex, char *ipaddr)
 
 	if (crypto_box_open_easy(buffer, message, MAX_TEXTSIZE,
 		nonce, bpkey, pkeys->secret) != 0)
-		fprintf(errf, "Error: Can't open cryptobox.\n");
+		fprintf(errf, "Error: Can't open cryptobox(1).\n");
 
 exit_decrypt:
 	if (message && message != NULL)
@@ -213,9 +213,40 @@ exit_decrypt:
 *	@text - Строка кодирования.
 *	@ipaddr - Ip адрес отвравителя.
 */
-static char *illenc_encrypt(char *text, char *ipaddr)
+static char *illenc_encrypt(unsigned char *text, char *ipaddr)
 {
+	uint8_t *bpkey, nonce[8] = {
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
+	};
+	unsigned char *buffer;
+	struct node_list node;
 
+	if (!text || text == NULL || strlen((char *)text) > MAX_TEXTSIZE
+		|| !ipaddr || ipaddr == NULL) {
+		fprintf(errf, "Error: Can't decrypt message.\n");
+		return NULL;
+	}
+
+	buffer = (unsigned char *)malloc(MAX_TEXTSIZE);
+	memset(buffer, '\0', MAX_TEXTSIZE);
+	node = db->nodeinfo(ipaddr);
+
+	if (node.hash == NULL)
+		goto exit_encrypt;
+	bpkey = illenc_hex2byte(node.hash);
+
+	if (crypto_box_easy(buffer, text, strlen((char *)text), nonce,
+		bpkey, pkeys->secret) != 0)
+		fprintf(errf, "Error: Can't open cryptobox(2).\n");
+
+exit_encrypt:
+	if (bpkey && bpkey != NULL)
+		free(bpkey);
+	if (node.hash != NULL) {
+		free(node.ipaddr);
+		free(node.hash);
+	}
+	return (char *)buffer;
 }
 /**
 *	illenc_rbytes - Функция получения рандомных значений.
