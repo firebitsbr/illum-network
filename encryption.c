@@ -10,7 +10,10 @@
 */
 static char *illenc_byte2hex(uint8_t [], unsigned int);
 static void illenc_cbconstants(struct cryptobox_d *);
+static void illenc_rbytes(uint8_t [], long long);
 static void illenc_genkeys(struct userkeys *);
+static char *illenc_decrypt(char *, char *);
+static char *illenc_encrypt(char *, char *);
 static uint8_t *illenc_hex2byte(char *);
 static char *illenc_publickey();
 /**
@@ -44,8 +47,11 @@ bool illenc_init(illenc *enc, illdb *dbstruct, FILE *errfile)
 	enc->publickey = illenc_publickey;
 	enc->hex2byte = illenc_hex2byte;
 	enc->byte2hex = illenc_byte2hex;
+	enc->decrypt = illenc_decrypt;
+	enc->encrypt = illenc_encrypt;
 
-	if (enc->hex2byte && enc->byte2hex && enc->publickey)
+	if (enc->hex2byte && enc->byte2hex && enc->publickey
+		&& enc->decrypt && enc->encrypt)
 		status = true;
 
 	return status;
@@ -88,6 +94,7 @@ static void illenc_cbconstants(struct cryptobox_d *cbl)
 {
 	cbl->publickey = crypto_box_PUBLICKEYBYTES;
 	cbl->secretkey = crypto_box_SECRETKEYBYTES;
+	cbl->nonce = crypto_secretbox_NONCEBYTES;
 }
 /**
 *	illenc_byte2hex - Функция преобразования байтового
@@ -156,4 +163,76 @@ static uint8_t *illenc_hex2byte(char *string)
 static char *illenc_publickey()
 {
 	return illenc_byte2hex(pkeys->public, cbl.publickey);
+}
+/**
+*	illenc_decrypt - Функция разкодирования сообщения.
+*
+*	@hex - Hex строка.
+*	@ipaddr - Ip адрес отвравителя.
+*/
+static char *illenc_decrypt(char *hex, char *ipaddr)
+{
+	uint8_t *message, *bpkey, nonce[8] = {
+		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
+	};
+	unsigned char *buffer;
+	struct node_list node;
+
+	if (!hex || hex == NULL || !ipaddr || ipaddr == NULL) {
+		fprintf(errf, "Error: Can't decrypt message.\n");
+		return NULL;
+	}
+
+	buffer = (unsigned char *)malloc(MAX_TEXTSIZE);
+	memset(buffer, '\0', MAX_TEXTSIZE);
+	message = illenc_hex2byte(hex);
+	node = db->nodeinfo(ipaddr);
+
+	if (node.hash == NULL)
+		goto exit_decrypt;
+	bpkey = illenc_hex2byte(node.hash);
+
+	if (crypto_box_open_easy(buffer, message, MAX_TEXTSIZE,
+		nonce, bpkey, pkeys->secret) != 0)
+		fprintf(errf, "Error: Can't open cryptobox.\n");
+
+exit_decrypt:
+	if (message && message != NULL)
+		free(message);
+	if (bpkey && bpkey != NULL)
+		free(bpkey);
+	if (node.hash != NULL) {
+		free(node.ipaddr);
+		free(node.hash);
+	}
+	return (char *)buffer;
+}
+/**
+*	illenc_encrypt - Функция кодирования сообщения.
+*
+*	@text - Строка кодирования.
+*	@ipaddr - Ip адрес отвравителя.
+*/
+static char *illenc_encrypt(char *text, char *ipaddr)
+{
+
+}
+/**
+*	illenc_rbytes - Функция получения рандомных значений.
+*
+*	@buffer - Буфер для записи.
+*	@size - Длина записи.
+*/
+static void illenc_rbytes(uint8_t buffer[], long long size)
+{
+	int fd, rc;
+
+	fd = open("/dev/urandom", O_RDONLY);
+	if (fd < 0) {
+		fprintf(stderr, "Error: Failed to open /dev/urandom.\n");
+		return;
+	}
+
+	if ((rc = read(fd, buffer, size)) >= 0)
+		close(fd);
 }
