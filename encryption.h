@@ -15,9 +15,11 @@
 #include <unistd.h>
 #include <sodium.h>
 #include "./database.h"
-
+/**
+*	Доступные структуры
+*/
 struct cryptobox_d {
-	unsigned int publickey, secretkey;
+	unsigned int publickey, secretkey, nonce;
 };
 
 struct userkeys {
@@ -26,9 +28,13 @@ struct userkeys {
 };
 
 typedef struct {
+	char *(*byte2hex)(), *(*publickey)(), *(*decrypt)(),
+		*(*encrypt)();
 	struct userkeys keys;
 	uint8_t *(*hex2byte)();
-	char *(*byte2hex)();
 } illenc;
-
+/**
+*	Доступные функции
+*/
+bool illenc_init(illenc *, illdb *, FILE *);
 #endif
