@@ -18,9 +18,9 @@
 #include <string.h>
 #include <json-c/json.h>
 #include <time.h>
+#include "./constants.h"
 #include "./database.h"
-#define MAXNODES 180
-#define UPDTIME 10000
+#include "./encryption.h"
 /**
 *	Доступные структуры
 */
@@ -44,5 +44,5 @@ typedef struct {
 /**
 *	Доступные функции
 */
-bool illrouter_init(illrouter *, illdb *, FILE *);
+bool illrouter_init(illrouter *, illdb *, illenc *, FILE *);
 #endif

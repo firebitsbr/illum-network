@@ -15,10 +15,10 @@ static struct node_list illdb_nodeinfo(char *);
 static void illdb_currenttask(struct stask *);
 static bool illdb_issettask(char *, char *);
 static bool	illdb_removetask(unsigned int);
+static void illdb_getvar(char *, char[]);
 static bool	illdb_newnode(char *, char *);
 static bool illdb_setvar(char *, char *);
 static void illdb_staticnode(char *);
-static char *illdb_getvar(char *);
 static void illdb_removecache();
 static void illdb_ping(char *);
 static int	illdb_nodenum();
@@ -38,6 +38,9 @@ static FILE *errf;
 */
 bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errfile)
 {
+#ifdef ILLUMDEBUG
+	printf("\nDatabase init...\n");
+#endif
 	int st_sqlite3 = -100;
 	bool status = false;
 
@@ -73,6 +76,9 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errfile)
 		&& dbstruct->nodeinfo && dbstruct->ping)
 		status = true;
 
+#ifdef ILLUMDEBUG
+	printf("%s.\n", status ? "Ok" : "Fail");
+#endif
 	return status;
 }
 /**
@@ -85,12 +91,7 @@ static bool illdb_removetask(unsigned int id)
 	sqlite3_stmt *rs = NULL;
 	char *sql = (char *)malloc(200);
 	bool status = false;
-
-	if (id > 2147483647) {
-		fprintf(errf, "Error: Invalid id in illdb_removetask.\n");
-		goto exit_removetask;
-	}
-
+	
 	sprintf(sql, "UPDATE `tasks` SET `status`='1' WHERE `id`='%d';",
 			id);
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
@@ -293,7 +294,7 @@ static bool illdb_newnode(char *ipaddr, char *hash)
 	if (illdb_issetnode(ipaddr, NULL, 2))
 		return status;
 
-	if ((length = strlen(ipaddr) + strlen(hash)) > MAX_TEXTSIZE) {
+	if ((length = strlen(ipaddr) + strlen(hash)) > MAXTEXTSIZE) {
 		fprintf(errf, "Error: Text size for task more than you can write.\n");
 		goto exit_newnode;
 	}
@@ -451,7 +452,7 @@ static int illdb_settask(char *ipaddr, char *text, char *headers)
 
 	if (text && text != NULL)
 		length += strlen(text);
-	if ((length += strlen(ipaddr) + strlen(headers)) > MAX_TEXTSIZE) {
+	if ((length += strlen(ipaddr) + strlen(headers)) > MAXTEXTSIZE) {
 		fprintf(errf, "Error: Text size for task more then you can write.\n");
 		return id;
 	}
@@ -504,7 +505,7 @@ exit_nodenum:
 *
 *	@name - Ip адрес получателя сообщения.
 */
-static char *illdb_getvar(char *name)
+static void illdb_getvar(char *name, char buffer[])
 {
 	sqlite3_stmt *rs = NULL;
 	char *sql, *var = NULL;
@@ -513,7 +514,7 @@ static char *illdb_getvar(char *name)
 	if (!name || name == NULL || (len = strlen(name)) < 2
 		|| len > 20) {
 		fprintf(errf, "Error: Incorrect option in getvar.\n");
-		return var;
+		goto exit_getvar;
 	}
 
 	sql = (char *)malloc(len + 100);
@@ -522,18 +523,18 @@ static char *illdb_getvar(char *name)
 
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_ROW) {
-		fprintf(errf, "Error: Can't get var from db.\n");
+		fprintf(errf, "Warring: Can't get %s from db.\n", name);
 		goto exit_getvar;
 	}
 
 	var = (char *)sqlite3_column_text(rs, 0);
+	memset(buffer, '\0', 101);
+	memcpy(buffer, var, 100);
 
 exit_getvar:
 	if (rs && rs != NULL)
 		sqlite3_finalize(rs);
 	free(sql);
-
-	return var;
 }
 /**
 *	illdb_setvar - Функция записи значения в таблицу
@@ -551,7 +552,7 @@ static bool illdb_setvar(char *name, char *value)
 
 	if (!name || (len1 = strlen(name)) < 2 || len1 > 20
 		|| !value || (len2 = strlen(value)) < 2
-		|| len2 > 20) {
+		|| len2 > 101) {
 		fprintf(errf, "Error: Incorrect option in getvar.\n");
 		return status;
 	}

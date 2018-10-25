@@ -24,8 +24,8 @@ int main()
 		return 1;
 	}
 
-	rte.read("{\"type\" : 1, \"nodenum\" : 0, \"ipaddr\" : \"\", "
-		"\"hash\" : \"bvmnbvmnbvmnvbmnbvvbmn\"}", "192.168.1.1");
+	/*rte.read("{\"type\" : 1, \"nodenum\" : 0, \"ipaddr\" : \"\", "
+		"\"hash\" : \"bvmnbvmnbvmnvbmnbvvbmn\"}", "192.168.1.1");*/
 	/*
 	> NEW NODE + BE FRIENDS
 

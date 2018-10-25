@@ -20,7 +20,7 @@
 #include <string.h>
 #include <time.h>
 #include <sqlite3.h>
-#define MAX_TEXTSIZE 9000
+#include "./constants.h"
 /**
 *	Доступные структуры
 */
@@ -38,9 +38,9 @@ struct stask {
 typedef struct {
 	bool (*removetask)(), (*newnode)(), (*isset_node)(),
 		(*setvar)();
-	void (*currenttask)(), (*staticnode)(), (*ping)();
+	void (*currenttask)(), (*staticnode)(), (*ping)(),
+		(*getvar)();
 	struct node_list *(*nodelist)(), (*nodeinfo)();
-	char *(*setting)(), *(*getvar)();
 	int (*newtask)(), (*nodenum)();
 } illdb;
 /**

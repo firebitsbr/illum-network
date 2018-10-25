@@ -1,6 +1,6 @@
 /**
-*	functions.c - Главные функции для взаимодействия с
-*	библиотекой сети.	
+*	functions.c - Главные функции управление сетью
+	сетью illum.
 *
 *	@mrrva - 2018
 */
@@ -8,104 +8,153 @@
 /**
 *	Прототипы приватных функций
 */
-static bool illum_initstructs(char *);
+static void illum_testrequest(enum illheader, char *);
+static bool illum_initstructs(struct illfunctions *);
 static bool illum_firstnode(char *);
-static unsigned int illum_connect();
+static bool illum_sendstraight();
+static bool illum_sendonion();
+static bool illum_connect();
 /**
 *	Глобальные переменные
 */
-struct illfunc fn;
-FILE *errf;
+static struct illfunctions fn;
+static illum *ill;
+static FILE *fp;
 /**
-*	illum_init - Функция инициализации сети и всех
-*	сопутствующих управляющих указателей.
+*	illum_init - Функция инициализации управляющей
+*	структуры сети.
 *
-*	@pointer - Главная управляющая структура.
-*	@path - Путь к каталогу ресурсов.
+*	@illum - Структура сети.
+*	@rpath - Путь к каталогу ресурсов.
 */
-bool illum_init(illum *pointer, char *path) 
+void illum_init(illum *illum, char *rpath)
 {
-	unsigned int length = 0;
-	char *errfile, *dbpath;
-	bool status = false;
-
-	if (pointer || pointer == NULL || !path
-		|| path == NULL || (length = strlen(path)) > 100) {
-		printf("Error: Incorrect options in illum_init.\n");
-		return status;
+	if (!illum || illum == NULL || !rpath || rpath == NULL
+		|| strlen(rpath) < 2 || rpath[strlen(rpath) - 1] != '/') {
+		printf("Error: Incorrect params in illum_init.\n");
+		return;
 	}
 
-	errfile = (char *)malloc(strlen(length + 100));
-	dbpath = (char *)malloc(strlen(length + 100));
-	sprintf(errfile, "%s/errors.log", path);
-	sprintf(dbpath, "%s/illum.db", path);
+	fn.errfile = (char *)malloc(strlen(rpath) + 11);
+	sprintf(fn.errfile, "%slog.txt", rpath);
+	fn.dbpath = (char *)malloc(strlen(rpath) + 11);
+	sprintf(fn.dbpath, "%sillum.db", rpath);
 
-	if (!(errf = fopen(errfile, "w"))) {
-		printf("Error: Can't open %s.\n", errfile);
-		goto exit_illum;
+	if (!(fp = fopen(fn.errfile, "a+"))) {
+		printf("Error: Can't open error file.\n");
+		return;
 	}
-
-	if (!illum_initstructs(dbpath))
-		goto exit_illum;
+	if (!illum_initstructs(&fn) || !(ill = illum)) {
+		fprintf(fp, "Error: Can't init main structs.\n");
+		return;
+	}
 
 	if (fn.db.nodenum() == 0)
-		pointer->firstnode = illum_firstnode;
-	pointer->message = illum_message;
-	pointer->connect = illum_connect;
-	pointer->onion = illum_onion;
-	pointer->start = illum_start;
-
-	if (pointer->firstnode && pointer->onionmessage
-		&& pointer->message && pointer->connect)
-		status = true;
-
-exit_illum:
-	free(errfile);
-	free(dbpath);
-	return status;
+		illum->firstnode = illum_firstnode;
+	else
+		illum->connect = illum_connect;
+	illum->sendstraight = illum_sendstraight;
+	illum->sendonion = illum_sendonion;
+	illum->testrequest = illum_testrequest;
 }
 /**
-*	illum_initstructs - Функция инициализации всех
-*	управляющих структур.
+*	illum_initstructs - Функция инициализации структур управления
+*	модулями сети.
+*
+*	@func - Структура модулей.
 */
-static bool illum_initstructs(char *dbpath)
+static bool illum_initstructs(struct illfunctions *func)
 {
-	bool status = true;
+	if (!func || func == NULL)
+		return false;
 
-	if (!illdb_init("./illum.db", &fn.db, errf)
-		status = false;
-	if (!illenc_init(&fn.encrypt, &fn.db, errf))
-		status = false;
-	if (!illrouter_init(&fn.router, &fn.db, &fn.encrypt,
-		errf))
-		status = false;
-	if (!illsrv_init(&fn.server, &fn.db, &fn.router, errf))
-		status = false;
-
-	if (!status)
-		fprintf(errf, "Error: Can't init main structs.\n");
-	return status;
-}
-/**
-*	illum_connect - Функция подключения к сети.
-*/
-static unsigned int illum_connect()
-{
-	if (fn.db.nodenum() == 0) {
-		fprintf(errf, "Error: Node list is empty.\n");
-		return 0; /* if we haven't nodes */
+	if (!illdb_init(func->dbpath, &func->db, fp)) {
+		fprintf(fp, "Error: Can't init illdb struct.\n");
+		return false;
+	}
+	if (!illenc_init(&func->encrypt, &func->db, fp)) {
+		fprintf(fp, "Error: Can't init illenc struct.\n");
+		return false;
+	}
+	if (!illrouter_init(&func->router, &func->db,
+						&func->encrypt, fp)) {
+		fprintf(fp, "Error: Can't init illrouter struct.\n");
+		return false;
+	}
+	if (!illsrv_init(&func->server, &func->db, &func->router,
+					fp)) {
+		fprintf(fp, "Error: Can't init illsrv struct.\n");
+		return false;
 	}
 
-	fn.router(false);
-	return 1;
+	return true;
 }
 /**
 *	illum_firstnode - Функция подключения к первой ноде
-*	сети.
+*	сети для получения информации и свободных узлов.
 *
-*	@ipaddr - Ip адрес первой ноды.
+*	@ipaddr - Адрес первой ноды.
 */
 static bool illum_firstnode(char *ipaddr)
 {
-	
+	bool status = false;
+
+	if (!ipaddr || ipaddr == NULL) {
+		fprintf(fp, "Error: Incorrect ip in illum_firstnode.\n");
+		return status;
+	}
+	if (fn.db.nodenum() != 0) {
+		fprintf(fp, "Error: You have some static nodes.\n");
+		return status;
+	}
+
+	/*status = fn.server.setnode(ipaddr);
+	if (status)
+		fn.thrd = fn.server.start();*/
+	fn.router.new(ILL_NEWNODE, ipaddr);
+	fn.thrd = fn.server.start();
+	sleep(40);
+
+	return status;
+}
+/**
+*	illum_connect - Функция подключения к сети с обновлением
+*	всех нод.
+*/
+static bool illum_connect()
+{
+	/*if (fn.db.nodenum() == 0) {
+		fprintf(fp, "Error: DB hasn't any static nodes.\n");
+		return false;
+	}*/
+
+	fn.router.updnodes(false);
+	fn.thrd = fn.server.start();
+
+	return true;
+}
+/**
+*	illum_testrequest - Тестовое сообщение ноде для проверки
+*	построения маршрута.
+*
+*	@type - Тип отправляемого сообщения.
+*	@ipaddr - Адрес первой ноды.
+*/
+static void illum_testrequest(enum illheader type, char *ipaddr)
+{
+	fn.router.new(type, ipaddr);
+	//fn.thrd = fn.server.start();
+	sleep(40);
+}
+
+
+
+static bool illum_sendstraight()
+{
+	return true;
+}
+
+static bool illum_sendonion()
+{
+	return true;
 }

@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <stdbool.h>
 #include <string.h>
+#include <pthread.h>
 #include "../sources/database.h"
 #include "../sources/encryption.h"
 #include "../sources/router.h"
@@ -19,7 +20,8 @@
 /**
 *	Доступные структуры
 */
-struct illfunc {
+struct illfunctions {
+	struct threads thrd;
 	illenc encrypt;
 	illrouter router;
 	illsrv server;
@@ -29,13 +31,13 @@ struct illfunc {
 };
 
 typedef struct {
-	bool (*firstnode)(), (*message)()
-		(*onionmessage)();
-	unsigned int (*connect)();
-	void (*start)();
+	bool (*connect)(), (*firstnode)(), (*sendstraight)(),
+		(*sendonion)();
+	void (*testrequest)();
+	struct illfunctions fn;
 } illum;
 /**
 *	Доступные функции
 */
-bool illum_init(illum *, char *);
+void illum_init(illum *, char *);
 #endif

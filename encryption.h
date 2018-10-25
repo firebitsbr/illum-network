@@ -2,6 +2,11 @@
 *	encryption.h - Заголовочный файл для encryption.c с перечнем
 *	всех функций и структур.
 *
+*	Пример инициализации модуля:
+*	illdb db;
+*	illenc enc;
+*	illenc_init(&enc, &db, fp);
+*
 *	@mrrva - 2018
 */
 #ifndef ILL_ENCRYPTION
@@ -14,6 +19,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sodium.h>
+#include "./constants.h"
 #include "./database.h"
 /**
 *	Доступные структуры

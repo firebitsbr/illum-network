@@ -84,17 +84,17 @@ static void illrouter_readroute(char *data, char *ipaddr)
 		{ILL_STAT, illrouter_stat, false}
 	};
 	unsigned int type = FUNCNULL;
+	char **content, *json;
 	struct headers msg;
 	json_object *jobj;
-	char **content;
 
 	if ((content = illrouter_explode(data)) == NULL) {
 		fprintf(errfile, "Error: Incorrect data in explode.\n");
 		return;
 	}
-	/* Encryption of headers */
+	json = encrpt->decrypt(content[0], ipaddr);
 
-	if (!(jobj = json_tokener_parse(content[0])) || !ipaddr
+	if (!(jobj = json_tokener_parse(json)) || !ipaddr
 		|| ipaddr == NULL || strlen(ipaddr) < 7) {
 		fprintf(errfile, "Error: Invalid json string or ip.\n");
 		goto exit_create;
@@ -114,6 +114,11 @@ static void illrouter_readroute(char *data, char *ipaddr)
 		func[type].name(jobj, msg, ipaddr, content[1]);
 
 exit_create:
+	if (content && content[0] && content[1]) {
+		free(content[0]);
+		free(content[1]);
+		free(content);
+	}
 	if (jobj && jobj != NULL)
 		json_object_put(jobj);
 }
@@ -126,7 +131,7 @@ static char **illrouter_explode(char *content)
 {
 	char **data, *tok, cont[strlen(content) + 1];
 
-	if (strlen(content) > MAX_TEXTSIZE
+	if (strlen(content) > MAXTEXTSIZE
 		|| !strstr(content, "\r\n\r\n")) {
 		fprintf(errfile, "Error: Can't explode content.\n");
 		return NULL;
@@ -169,6 +174,10 @@ static void illrouter_newroute(enum illheader type, char *ipaddr)
 		fprintf(errfile, "Error: Incorrect ipaddr in newroute.\n");
 		return;
 	}
+
+#ifdef ILLUMDEBUG
+	printf("<- New route for %s, which type is %d\n", ipaddr, type);
+#endif
 
 	jobj = json_object_new_object();
 	hash = encrpt->publickey();
@@ -245,6 +254,9 @@ static bool illrouter_decode(json_object *jobj, struct headers *msg)
 static void illrouter_newnode(json_object *jobj, struct headers msg,
 	char *ipaddr, char *content)
 {
+#ifdef ILLUMDEBUG
+	printf("-> Request NEWNODE from %s\n", ipaddr);
+#endif
 	struct node_list *list;
 	char *headers, *ipc;
 	unsigned int len;
@@ -302,6 +314,9 @@ exit_newnode:
 static void illrouter_ping(json_object *jobj, struct headers msg,
 	char *ipaddr, char *content)
 {
+#ifdef ILLUMDEBUG
+	printf("-> Request PING from %s\n", ipaddr);
+#endif
 	struct node_list node;
 	time_t ntime;
 
@@ -334,7 +349,9 @@ static void illrouter_ping(json_object *jobj, struct headers msg,
 static void illrouter_stat(json_object *jobj, struct headers msg,
 	char *ipaddr, char *content)
 {
-
+#ifdef ILLUMDEBUG
+	printf("-> Request STAT from %s\n", ipaddr);
+#endif
 }
 /**
 *	illrouter_befriends - Функция создания маршрута для
@@ -346,6 +363,9 @@ static void illrouter_stat(json_object *jobj, struct headers msg,
 static void illrouter_befriends(json_object *jobj, struct headers msg,
 	char *ipaddr, char *content)
 {
+#ifdef ILLUMDEBUG
+	printf("-> Request BEFRIENDS from %s\n", ipaddr);
+#endif
 	if (!jobj || jobj == NULL || !ipaddr || ipaddr == NULL) {
 		fprintf(errfile, "Warring: Invalid json object(1).\n");
 		return;
@@ -397,6 +417,9 @@ static void illrouter_onion(json_object *jobj, struct headers msg,
 */
 static void illrouter_updnodes(bool use_time)
 {
+#ifdef ILLUMDEBUG
+	printf("<- Nodes updating.\n");
+#endif
 	struct node_list *nodes;
 	unsigned int len;
 	time_t ntime;

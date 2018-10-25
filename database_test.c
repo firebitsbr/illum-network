@@ -13,9 +13,7 @@ int main()
 
 	/* Entering value to database ... */
 	db.newnode("8.8.8.8", "s0m3hashs0m3hashs0m3hash", 500, 
-		"Some info abount server, Some info abount server, Some info abount server, Some info abount server,"
-		"Some info abount server, Some info abount server, Some info abount server, ",
-		"CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT", fp);
+	"CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT_CERT", fp);
 
 	/* Getting node list from database */
 	nodes = db.nodelist(&length, fp);
