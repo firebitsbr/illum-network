@@ -29,6 +29,7 @@
 #include <errno.h>
 #include "./constants.h"
 #include "./database.h"
+#include "./encryption.h"
 #include "./router.h"
 /**
 *	Доступные структуры

@@ -29,14 +29,11 @@ static FILE *errfile;
 */
 bool illsrv_init(illsrv *srvstruct, illdb *db, illrouter *route, FILE *errf)
 {
-	unsigned int len = 0;
-
 	if (!srvstruct || srvstruct == NULL || !db || db == NULL
 		|| !route || route == NULL || !errf || errf == NULL)
 		return false;
 
 	tout.tv_sec = SERVER_TIMEOUT;
-	len = db->nodenum();
 	tout.tv_usec = 0;
 	errfile = errf;
 	database = db;
@@ -47,8 +44,6 @@ bool illsrv_init(illsrv *srvstruct, illdb *db, illrouter *route, FILE *errf)
 				"illsrv_startservers.\n");
 		return false;
 	}
-	/*else
-		route->updnodes(list, len);*/
 
 	return true;
 }

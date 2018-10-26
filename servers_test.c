@@ -5,15 +5,24 @@ int main()
 {
 	illdb db;
 	illsrv srv;
-	char ipaddr[20] = "192.168.1.46";
+	illenc enc;
 	illrouter router;
 	struct threads thrds;
-	int id = 0;
 	FILE *fp = fopen("./log.txt", "a+");
 
 	/* Init illdb */
 	if (!illdb_init("./illum.db", &db, fp)) {
 		printf("Error: Can't init illdb struct.\n");
+		return 1;
+	}
+
+	if (!illenc_init(&enc, &db, fp)) {
+		printf("Error: Can't init illenc struct.\n");
+		return 1;
+	}
+
+	if (!illrouter_init(&router, &db, &enc, fp)) {
+		printf("Error: Can't init illrouter struct.\n");
 		return 1;
 	}
 
@@ -23,6 +32,7 @@ int main()
 		return 1;
 	}
 
+	router.new(1, "192.168.1.42", NULL);
 	thrds = srv.start(srv);
 
 	/* You can send a text to some ip */
@@ -33,7 +43,6 @@ int main()
 	//printf("Task id:%d\n", id);
 	//pthread_join(thrds.server, 0);
 
-	//router.new(1, "192.168.1.46");
 	pthread_join(thrds.client, 0);
 
 	return 0;

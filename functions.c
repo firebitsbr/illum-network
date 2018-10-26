@@ -8,7 +8,6 @@
 /**
 *	Прототипы приватных функций
 */
-static void illum_testrequest(enum illheader, char *);
 static bool illum_initstructs(struct illfunctions *);
 static bool illum_firstnode(char *);
 static bool illum_sendstraight();
@@ -17,8 +16,7 @@ static bool illum_connect();
 /**
 *	Глобальные переменные
 */
-static struct illfunctions fn;
-static illum *ill;
+static struct illfunctions *fn;
 static FILE *fp;
 /**
 *	illum_init - Функция инициализации управляющей
@@ -35,27 +33,28 @@ void illum_init(illum *illum, char *rpath)
 		return;
 	}
 
-	fn.errfile = (char *)malloc(strlen(rpath) + 11);
-	sprintf(fn.errfile, "%slog.txt", rpath);
-	fn.dbpath = (char *)malloc(strlen(rpath) + 11);
-	sprintf(fn.dbpath, "%sillum.db", rpath);
+	fn = &illum->module;
+	fn->dbpath = (char *)malloc(strlen(rpath) + 11);
+	fn->errfile = (char *)malloc(strlen(rpath) + 11);
 
-	if (!(fp = fopen(fn.errfile, "a+"))) {
+	sprintf(fn->errfile, "%slog.txt", rpath);
+	sprintf(fn->dbpath, "%sillum.db", rpath);
+
+	if (!(fp = fopen(fn->errfile, "a+"))) {
 		printf("Error: Can't open error file.\n");
 		return;
 	}
-	if (!illum_initstructs(&fn) || !(ill = illum)) {
+	if (!illum_initstructs(fn)) {
 		fprintf(fp, "Error: Can't init main structs.\n");
 		return;
 	}
 
-	if (fn.db.nodenum() == 0)
+	if (fn->db.nodenum() == 0)
 		illum->firstnode = illum_firstnode;
 	else
 		illum->connect = illum_connect;
 	illum->sendstraight = illum_sendstraight;
 	illum->sendonion = illum_sendonion;
-	illum->testrequest = illum_testrequest;
 }
 /**
 *	illum_initstructs - Функция инициализации структур управления
@@ -103,18 +102,12 @@ static bool illum_firstnode(char *ipaddr)
 		fprintf(fp, "Error: Incorrect ip in illum_firstnode.\n");
 		return status;
 	}
-	if (fn.db.nodenum() != 0) {
+	if (fn->db.nodenum() != 0) {
 		fprintf(fp, "Error: You have some static nodes.\n");
 		return status;
 	}
 
-	/*status = fn.server.setnode(ipaddr);
-	if (status)
-		fn.thrd = fn.server.start();*/
-	fn.router.new(ILL_NEWNODE, ipaddr);
-	fn.thrd = fn.server.start();
-	sleep(40);
-
+	fn->router.new(ILL_NEWNODE, ipaddr, NULL);
 	return status;
 }
 /**
@@ -123,29 +116,19 @@ static bool illum_firstnode(char *ipaddr)
 */
 static bool illum_connect()
 {
-	/*if (fn.db.nodenum() == 0) {
+	if (fn->db.nodenum() == 0) {
 		fprintf(fp, "Error: DB hasn't any static nodes.\n");
 		return false;
-	}*/
+	}
 
-	fn.router.updnodes(false);
-	fn.thrd = fn.server.start();
-
+	fn->router.updnodes(false);
 	return true;
 }
-/**
-*	illum_testrequest - Тестовое сообщение ноде для проверки
-*	построения маршрута.
-*
-*	@type - Тип отправляемого сообщения.
-*	@ipaddr - Адрес первой ноды.
-*/
-static void illum_testrequest(enum illheader type, char *ipaddr)
-{
-	fn.router.new(type, ipaddr);
-	//fn.thrd = fn.server.start();
-	sleep(40);
-}
+
+
+
+
+
 
 
 

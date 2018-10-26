@@ -33,8 +33,7 @@ struct illfunctions {
 typedef struct {
 	bool (*connect)(), (*firstnode)(), (*sendstraight)(),
 		(*sendonion)();
-	void (*testrequest)();
-	struct illfunctions fn;
+	struct illfunctions module;
 } illum;
 /**
 *	Доступные функции

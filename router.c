@@ -34,8 +34,8 @@ static void illrouter_newnode(json_object *, struct headers, char *, char *);
 static void illrouter_onion(json_object *, struct headers, char *, char *);
 static void illrouter_ping(json_object *, struct headers, char *, char *);
 static void illrouter_stat(json_object *, struct headers, char *, char *);
+static void illrouter_newroute(enum illheader, char *, char *);
 static bool illrouter_decode(json_object *, struct headers *);
-static void illrouter_newroute(enum illheader, char *);
 static void illrouter_readroute(char *, char *);
 static char **illrouter_explode(char *);
 static void illrouter_updnodes(bool);
@@ -92,7 +92,8 @@ static void illrouter_readroute(char *data, char *ipaddr)
 		fprintf(errfile, "Error: Incorrect data in explode.\n");
 		return;
 	}
-	json = encrpt->decrypt(content[0], ipaddr);
+	//json = encrpt->decrypt(content[0], ipaddr);
+	json = content[0];
 
 	if (!(jobj = json_tokener_parse(json)) || !ipaddr
 		|| ipaddr == NULL || strlen(ipaddr) < 7) {
@@ -164,20 +165,25 @@ static char **illrouter_explode(char *content)
 *	@type - Тип маршрута.
 *	@ipaddr - Адрес для отправки.
 */
-static void illrouter_newroute(enum illheader type, char *ipaddr)
+static void illrouter_newroute(enum illheader type, char *ipaddr, char *text)
 {
+	char *json, *hash, *buffer = text;
 	unsigned int nodenum = 0;
 	json_object *jobj;
-	char *json, *hash;
 
 	if (!ipaddr || ipaddr == NULL || strlen(ipaddr) < 7) {
 		fprintf(errfile, "Error: Incorrect ipaddr in newroute.\n");
 		return;
 	}
+	if (type > 9 && type < 20 && (!text || text == NULL
+		|| strlen(text) <= 1)) {
+		fprintf(errfile, "Error: Incorrect args for type %d.\n", type);
+		return;
+	}
 
-#ifdef ILLUMDEBUG
-	printf("<- New route for %s, which type is %d\n", ipaddr, type);
-#endif
+	if (text)
+		//buffer = encrpt->encrypt(text, ipaddr);
+		buffer = text;
 
 	jobj = json_object_new_object();
 	hash = encrpt->publickey();
@@ -193,7 +199,7 @@ static void illrouter_newroute(enum illheader type, char *ipaddr)
 	}
 
 	json = (char *)json_object_to_json_string(jobj);
-	db->newtask(ipaddr, NULL, json);
+	db->newtask(ipaddr, buffer, json);
 
 	if (jobj && jobj != NULL)
 		json_object_put(jobj);
@@ -254,9 +260,6 @@ static bool illrouter_decode(json_object *jobj, struct headers *msg)
 static void illrouter_newnode(json_object *jobj, struct headers msg,
 	char *ipaddr, char *content)
 {
-#ifdef ILLUMDEBUG
-	printf("-> Request NEWNODE from %s\n", ipaddr);
-#endif
 	struct node_list *list;
 	char *headers, *ipc;
 	unsigned int len;
@@ -273,7 +276,7 @@ static void illrouter_newnode(json_object *jobj, struct headers msg,
 
 		if (!db->isset_node(ipc, NULL, 2)) {
 			db->newnode(ipc, msg.hash);
-			illrouter_newroute(ILL_BEFRIENDS, ipc);
+			illrouter_newroute(ILL_BEFRIENDS, ipc, NULL);
 		}
 	}
 
@@ -314,9 +317,6 @@ exit_newnode:
 static void illrouter_ping(json_object *jobj, struct headers msg,
 	char *ipaddr, char *content)
 {
-#ifdef ILLUMDEBUG
-	printf("-> Request PING from %s\n", ipaddr);
-#endif
 	struct node_list node;
 	time_t ntime;
 
@@ -337,7 +337,7 @@ static void illrouter_ping(json_object *jobj, struct headers msg,
 		return;
 
 	db->ping(ipaddr);
-	illrouter_newroute(ILL_PING, ipaddr);
+	illrouter_newroute(ILL_PING, ipaddr, NULL);
 }
 /**
 *	illrouter_stat - Функция создания маршрута для
@@ -349,9 +349,7 @@ static void illrouter_ping(json_object *jobj, struct headers msg,
 static void illrouter_stat(json_object *jobj, struct headers msg,
 	char *ipaddr, char *content)
 {
-#ifdef ILLUMDEBUG
-	printf("-> Request STAT from %s\n", ipaddr);
-#endif
+
 }
 /**
 *	illrouter_befriends - Функция создания маршрута для
@@ -363,9 +361,6 @@ static void illrouter_stat(json_object *jobj, struct headers msg,
 static void illrouter_befriends(json_object *jobj, struct headers msg,
 	char *ipaddr, char *content)
 {
-#ifdef ILLUMDEBUG
-	printf("-> Request BEFRIENDS from %s\n", ipaddr);
-#endif
 	if (!jobj || jobj == NULL || !ipaddr || ipaddr == NULL) {
 		fprintf(errfile, "Warring: Invalid json object(1).\n");
 		return;
@@ -379,12 +374,12 @@ static void illrouter_befriends(json_object *jobj, struct headers msg,
 	
 	if (db->isset_node(ipaddr, NULL, 0)) {
 		db->staticnode(msg.hash);
-		illrouter_newroute(ILL_BEFRIENDS, ipaddr);
+		illrouter_newroute(ILL_BEFRIENDS, ipaddr, NULL);
 		return;
 	}
 
 	db->newnode(ipaddr, msg.hash);
-	illrouter_newroute(ILL_BEFRIENDS, ipaddr);
+	illrouter_newroute(ILL_BEFRIENDS, ipaddr, NULL);
 }
 /**
 *	illrouter_straight - Функция создания маршрута для
@@ -417,9 +412,6 @@ static void illrouter_onion(json_object *jobj, struct headers msg,
 */
 static void illrouter_updnodes(bool use_time)
 {
-#ifdef ILLUMDEBUG
-	printf("<- Nodes updating.\n");
-#endif
 	struct node_list *nodes;
 	unsigned int len;
 	time_t ntime;
