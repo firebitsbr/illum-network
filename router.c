@@ -115,11 +115,12 @@ static void illrouter_readroute(char *data, char *ipaddr)
 		func[type].name(jobj, msg, ipaddr, content[1]);
 
 exit_create:
-	if (content && content[0] && content[1]) {
+	if (content[0])
 		free(content[0]);
+	if (content[1])
 		free(content[1]);
+	if (content)
 		free(content);
-	}
 	if (jobj && jobj != NULL)
 		json_object_put(jobj);
 }
@@ -149,9 +150,8 @@ static char **illrouter_explode(char *content)
 	memcpy(data[0], tok, strlen(tok) + 1);
 
 	if ((tok = strtok(NULL, "\r\n\r\n")) == NULL) {
-		free(data[0]);
-		free(data);
-		return NULL;
+		data[1] = NULL;
+		return data;
 	}
 	data[1] = (char *)malloc(strlen(tok) + 1);
 	memcpy(data[1], tok, strlen(tok) + 1);
@@ -167,7 +167,7 @@ static char **illrouter_explode(char *content)
 */
 static void illrouter_newroute(enum illheader type, char *ipaddr, char *text)
 {
-	char *json, *hash, *buffer = text;
+	char *json, *hash, *buffer = NULL;
 	unsigned int nodenum = 0;
 	json_object *jobj;
 
@@ -181,9 +181,10 @@ static void illrouter_newroute(enum illheader type, char *ipaddr, char *text)
 		return;
 	}
 
-	if (text)
+	//if (text && text != NULL)
 		//buffer = encrpt->encrypt(text, ipaddr);
-		buffer = text;
+	//buffer = (char *)malloc(strlen(text) + 10);
+	//strcpy(buffer, text);
 
 	jobj = json_object_new_object();
 	hash = encrpt->publickey();
@@ -371,7 +372,7 @@ static void illrouter_befriends(json_object *jobj, struct headers msg,
 	}
 	if (db->nodenum(errfile) >= MAXNODES)
 		return;
-	
+
 	if (db->isset_node(ipaddr, NULL, 0)) {
 		db->staticnode(msg.hash);
 		illrouter_newroute(ILL_BEFRIENDS, ipaddr, NULL);
@@ -423,13 +424,10 @@ static void illrouter_updnodes(bool use_time)
 		return;
 
 	for (int i = 0; i < len; i++) {
-		if (use_time) {
-			if ((unsigned long)ntime - nodes[i].ping
-				> UPDTIME)
-				db->ping(nodes[i].ipaddr);
-		}
-		else {
-			db->ping(nodes[i].ipaddr);
+		if ((((unsigned long)ntime - nodes[i].ping > UPDTIME)
+			&& use_time) || !use_time) {
+			db->unstatic(nodes[i].ipaddr);
+			illrouter_newroute(ILL_PING, nodes[i].ipaddr, NULL);
 		}
 
 		free(nodes[i].ipaddr);

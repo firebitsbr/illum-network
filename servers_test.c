@@ -32,7 +32,8 @@ int main()
 		return 1;
 	}
 
-	router.new(1, "192.168.1.42", NULL);
+	//router.new(0, "192.168.1.42", NULL);
+	router.updnodes(false);
 	thrds = srv.start(srv);
 
 	/* You can send a text to some ip */
@@ -44,6 +45,9 @@ int main()
 	//pthread_join(thrds.server, 0);
 
 	pthread_join(thrds.client, 0);
+
+	//router.read("{ \"nodenum\": 0, \"ipaddr\": \"\", \"hash\": \"cbffadd01e014abdc4a36899e946ebed67fc4aff11d3bf8223c7c3cba0604637\", \"type\": 3 }\r\n\r\n", "192.168.1.42");
+	//router.read("{ \"nodenum\": 0, \"ipaddr\": \"\", \"hash\": \"cbffadd01e014abdc4a36899e946ebed67fc4aff11d3bf8223c7c3cba0604637\", \"type\": 3 }\r\n\r\n", "192.168.1.42");
 
 	return 0;
 }

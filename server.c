@@ -152,6 +152,8 @@ static void *illsrv_client()
 			fprintf(errfile, "Error: Can't send message (client).\n");
 		else
 			database->removetask(task.id);
+
+		rte->updnodes(true);
 	}
 
 	if (socket_master > 0) {

@@ -39,7 +39,7 @@ typedef struct {
 	bool (*removetask)(), (*newnode)(), (*isset_node)(),
 		(*setvar)();
 	void (*currenttask)(), (*staticnode)(), (*ping)(),
-		(*getvar)();
+		(*getvar)(), (*unstatic)();
 	struct node_list *(*nodelist)(), (*nodeinfo)();
 	int (*newtask)(), (*nodenum)();
 } illdb;

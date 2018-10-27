@@ -19,6 +19,7 @@ static void illdb_getvar(char *, char[]);
 static bool	illdb_newnode(char *, char *);
 static bool illdb_setvar(char *, char *);
 static void illdb_staticnode(char *);
+static void illdb_unstatic(char *);
 static void illdb_removecache();
 static void illdb_ping(char *);
 static int	illdb_nodenum();
@@ -61,6 +62,7 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errfile)
 	dbstruct->removetask = illdb_removetask;
 	dbstruct->isset_node = illdb_issetnode;
 	dbstruct->nodelist = illdb_nodelist;
+	dbstruct->unstatic = illdb_unstatic;
 	dbstruct->nodeinfo = illdb_nodeinfo;
 	dbstruct->newtask = illdb_settask;
 	dbstruct->newnode = illdb_newnode;
@@ -73,7 +75,8 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errfile)
 		&& dbstruct->newtask && dbstruct->newnode
 		&& dbstruct->currenttask && dbstruct->nodenum
 		&& dbstruct->staticnode && dbstruct->isset_node
-		&& dbstruct->nodeinfo && dbstruct->ping)
+		&& dbstruct->nodeinfo && dbstruct->ping
+		&& dbstruct->unstatic)
 		status = true;
 
 #ifdef ILLUMDEBUG
@@ -137,6 +140,31 @@ static void illdb_ping(char *ipaddr)
 	free(sql);
 }
 /**
+*	illdb_unstatic - Функция разрывающая статический маршрут в
+*	базе данных.
+*
+*	@ipaddr - Ip адрес ноды.
+*/
+static void illdb_unstatic(char *ipaddr)
+{
+	sqlite3_stmt *rs = NULL;
+	char *sql;
+
+	if (!ipaddr || ipaddr == NULL) {
+		fprintf(errf, "Error: Incorrect param in illdb_unstatic.\n");
+		return;
+	}
+
+	sql = (char *)malloc(strlen(ipaddr) + 40);
+	sprintf(sql, "UPDATE `nodes` SET `status`='0' WHERE `ip`='%s'",
+		ipaddr);
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+	sqlite3_step(rs);
+
+	sqlite3_finalize(rs);
+	free(sql);
+}
+/**
 *	illdb_staticnode - Функция подтверждения статического подключения
 *	между нодами.
 *
@@ -163,7 +191,6 @@ exit_staticnode:
 		sqlite3_finalize(rs);
 	if (sql && sql != NULL)
 		free(sql);
-	return;
 }
 /**
 *	illdb_removecache - Функция удаления лишних записей из базы.
