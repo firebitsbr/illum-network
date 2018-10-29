@@ -115,7 +115,7 @@ static void illrouter_readroute(char *data, char *ipaddr)
 		func[type].name(jobj, msg, ipaddr, content[1]);
 
 exit_create:
-	if (content[0])
+	if (content[0]) 
 		free(content[0]);
 	if (content[1])
 		free(content[1]);

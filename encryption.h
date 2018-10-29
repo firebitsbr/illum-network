@@ -24,20 +24,16 @@
 /**
 *	Доступные структуры
 */
-struct cryptobox_d {
-	unsigned int publickey, secretkey, nonce;
-};
-
 struct userkeys {
-	uint8_t public[crypto_box_PUBLICKEYBYTES];
-	uint8_t secret[crypto_box_SECRETKEYBYTES];
+	unsigned char public[crypto_box_PUBLICKEYBYTES];
+	unsigned char secret[crypto_box_SECRETKEYBYTES];
 };
 
 typedef struct {
-	char *(*byte2hex)(), *(*publickey)(), *(*decrypt)(),
-		*(*encrypt)();
+	unsigned char *(*hex2byte)(), *(*encrypt)(),
+		*(*decrypt)();
+	char *(*byte2hex)(), *(*publickey)();
 	struct userkeys keys;
-	uint8_t *(*hex2byte)();
 } illenc;
 /**
 *	Доступные функции

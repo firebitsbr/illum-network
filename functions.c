@@ -96,19 +96,17 @@ static bool illum_initstructs(struct illfunctions *func)
 */
 static bool illum_firstnode(char *ipaddr)
 {
-	bool status = false;
-
 	if (!ipaddr || ipaddr == NULL) {
 		fprintf(fp, "Error: Incorrect ip in illum_firstnode.\n");
-		return status;
+		return false;
 	}
 	if (fn->db.nodenum() != 0) {
 		fprintf(fp, "Error: You have some static nodes.\n");
-		return status;
+		return false;
 	}
 
 	fn->router.new(ILL_NEWNODE, ipaddr, NULL);
-	return status;
+	return true;
 }
 /**
 *	illum_connect - Функция подключения к сети с обновлением

@@ -5,21 +5,19 @@
 *	@mrrva - 2018
 */
 #include "./encryption.h"
+#define MESSAGE (const unsigned char *) "Message"
 /**
 *	Прототипы приватных функций
 */
-static char *illenc_byte2hex(char[], const uint8_t[], size_t);
-static void illenc_cbconstants(struct cryptobox_d *);
-static char *illenc_encrypt(unsigned char *, char *);
-static void illenc_rbytes(uint8_t [], long long);
+static unsigned char *illenc_encrypt(unsigned char *, char *);
+static unsigned char *illenc_decrypt(unsigned char *);
+static char *illenc_byte2hex(unsigned char *, int);
+static unsigned char *illenc_hex2byte(char *);
 static void illenc_genkeys(struct userkeys *);
-static char *illenc_decrypt(char *, char *);
-static uint8_t *illenc_hex2byte(char *);
 static char *illenc_publickey();
 /**
 *	Глобальные переменные
 */
-static struct cryptobox_d cbl;
 struct userkeys *pkeys;
 static FILE *errf;
 static illdb *db;
@@ -33,9 +31,6 @@ static illdb *db;
 */
 bool illenc_init(illenc *enc, illdb *dbstruct, FILE *errfile)
 {
-#ifdef ILLUMDEBUG
-	printf("\nEncryption init...\n");
-#endif
 	bool status = false;
 
 	if (!(db = dbstruct) || !(errf = errfile)) {
@@ -43,7 +38,6 @@ bool illenc_init(illenc *enc, illdb *dbstruct, FILE *errfile)
 		return status;
 	}
 
-	illenc_cbconstants(&cbl);
 	illenc_genkeys(&enc->keys);
 	pkeys = &enc->keys;
 
@@ -57,9 +51,6 @@ bool illenc_init(illenc *enc, illdb *dbstruct, FILE *errfile)
 		&& enc->decrypt && enc->encrypt)
 		status = true;
 
-#ifdef ILLUMDEBUG
-	printf("%s.\n", status ? "Ok" : "Fail");
-#endif
 	return status;
 }
 /**
@@ -69,63 +60,67 @@ bool illenc_init(illenc *enc, illdb *dbstruct, FILE *errfile)
 */
 static void illenc_genkeys(struct userkeys *keys)
 {
-	char public[101], secret[101];
+	unsigned char *byte_public = NULL, *byte_secret = NULL;
+	char *public, *secret;
+
+	if (!keys || keys == NULL)
+		return;
+
+	public = (char *)malloc(101);
+	secret = (char *)malloc(101);
 
 	db->getvar("PUBLICKEY", public);
 	db->getvar("SECRETKEY", secret);
 
 	if (strlen(public) > 10 && strlen(secret) > 10) {
-		memcpy(keys->public, illenc_hex2byte(public), cbl.publickey);
-		memcpy(keys->secret, illenc_hex2byte(secret), cbl.secretkey);
+		byte_public = illenc_hex2byte(public);
+		byte_secret = illenc_hex2byte(secret);
 
-	#ifdef ILLUMDEBUG
-		printf("> Public key: %s\n> Secret key: %s\n", public, secret);
-	#endif
-		return;
+		if (!byte_public || !byte_secret)
+			return;
+		memcpy(keys->public, byte_public, 
+				crypto_box_PUBLICKEYBYTES);
+		memcpy(keys->secret, byte_secret, 
+				crypto_box_SECRETKEYBYTES);
+
+		goto exit_genkeys;
 	}
 
 	crypto_box_keypair(keys->public, keys->secret);
-	illenc_byte2hex(public, keys->public, cbl.publickey);
-	illenc_byte2hex(secret, keys->secret, cbl.secretkey);
-
-#ifdef ILLUMDEBUG
-	printf("> Public key: %s\n> Secret key: %s\n", public, secret);
-#endif
+	memcpy(public, illenc_byte2hex(keys->public,
+		crypto_box_PUBLICKEYBYTES), 100);
+	memcpy(secret, illenc_byte2hex(keys->secret,
+		crypto_box_SECRETKEYBYTES), 100);
 
 	db->setvar("PUBLICKEY", public);
 	db->setvar("SECRETKEY", secret);
-}
-/**
-*	illenc_cbconstants - Функция записи констант от crypto
-*	box в структуру.
-*
-*	@cbl - Структура констант cryptobox.
-*/
-static void illenc_cbconstants(struct cryptobox_d *cbl)
-{
-	cbl->publickey = crypto_box_PUBLICKEYBYTES;
-	cbl->secretkey = crypto_box_SECRETKEYBYTES;
-	cbl->nonce = crypto_secretbox_NONCEBYTES;
+
+exit_genkeys:
+	if (byte_public != NULL && byte_secret != NULL) {
+		free(byte_public);
+		free(byte_secret);
+	}
+	free(public);
+	free(secret);
 }
 /**
 *	illenc_byte2hex - Функция преобразования байтового
 *	массива в hex строку.
 *
-*	@hex - Буфер записи.
-*	@bin - Битовый массив.
-*	@length - Длина буфера.
+*	@bytes - Запись для перевода в hex.
+*	@len - Длина записи.
 */
-static char *illenc_byte2hex(char hex[], const uint8_t bin[],
-	size_t length)
+static char *illenc_byte2hex(unsigned char *bytes, int len)
 {
-	uint8_t *p0 = (uint8_t *)bin;
-	char *p1 = hex;
+	char *hex;
 
-	for(int i = 0; i < length; i++) {
-		snprintf( p1, 3, "%02x", *p0 );
-		p0 += 1;
-		p1 += 2;
-	}
+	if (!bytes || bytes == NULL || len == 0
+		|| len > MAXTEXTSIZE)
+		return NULL;
+
+	hex = (char *)malloc(MAXTEXTSIZE + 1);
+	memset(hex, '\0', MAXTEXTSIZE + 1);
+	sodium_bin2hex(hex, MAXTEXTSIZE, bytes, len);
 
 	return hex;
 }
@@ -135,17 +130,17 @@ static char *illenc_byte2hex(char hex[], const uint8_t bin[],
 *
 *	@string - Hex строка.
 */
-static uint8_t *illenc_hex2byte(char *string)
+static unsigned char *illenc_hex2byte(char *string)
 {
 	int length, value = 0;
+	unsigned char *data;
 	bool flag = false;
-	uint8_t *data;
 
 	if (!string || string == NULL || strlen(string) % 2 != 0)
 		return NULL;
 
 	length = strlen(string);
-	data = (uint8_t *)malloc(length / 2);
+	data = (unsigned char *)malloc(length / 2);
 	memset(data, '\0', length / 2);
 
 	for (int i = 0; i < length; i++, value = 0) {
@@ -171,60 +166,28 @@ static uint8_t *illenc_hex2byte(char *string)
 	return data;
 }
 /**
-*	illenc_publickey - Функция возврата публичного ключа / логина.
-*/
-static char *illenc_publickey()
-{
-	char *buffer;
-
-	buffer = (char *)malloc(101);
-	memset(buffer, '\0', 100);
-	illenc_byte2hex(buffer, pkeys->public, cbl.publickey);
-
-	return buffer;
-}
-/**
 *	illenc_decrypt - Функция разкодирования сообщения.
 *
-*	@hex - Hex строка.
-*	@ipaddr - Ip адрес отвравителя.
+*	@text - Шифрованная байт-строка.
 */
-static char *illenc_decrypt(char *hex, char *ipaddr)
+static unsigned char *illenc_decrypt(unsigned char *text)
 {
-	uint8_t *message, *bpkey, nonce[8] = {
-		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
-	};
-	unsigned char *buffer;
-	struct node_list node;
+	unsigned char *buffer = NULL;
+	unsigned int len;
 
-	if (!hex || hex == NULL || !ipaddr || ipaddr == NULL) {
-		fprintf(errf, "Error: Can't decrypt message.\n");
+	len = MAXTEXTSIZE + crypto_box_SEALBYTES;
+
+	if (!text || text == NULL || strlen((char *)text) > len)
 		return NULL;
-	}
 
-	buffer = (unsigned char *)malloc(MAXTEXTSIZE);
-	memset(buffer, '\0', MAXTEXTSIZE);
-	message = illenc_hex2byte(hex);
-	node = db->nodeinfo(ipaddr);
+	buffer = (unsigned char *)malloc(len + 1);
+	memset(buffer, '\0', len);
 
-	if (node.hash == NULL)
-		goto exit_decrypt;
-
-	bpkey = illenc_hex2byte(node.hash);
-	if (crypto_box_open_easy(buffer, message, MAXTEXTSIZE,
-		nonce, bpkey, pkeys->secret) != 0)
-		fprintf(errf, "Error: Can't open cryptobox(1).\n");
-
-exit_decrypt:
-	if (message && message != NULL)
-		free(message);
-	if (bpkey && bpkey != NULL)
-		free(bpkey);
-	if (node.hash != NULL) {
-		free(node.ipaddr);
-		free(node.hash);
-	}
-	return (char *)buffer;
+	if (crypto_box_seal_open(buffer, text, len, pkeys->public,
+		pkeys->secret) != 0)
+		fprintf(errf, "Error: Can't decrypt message.\n");
+	
+	return buffer;
 }
 /**
 *	illenc_encrypt - Функция кодирования сообщения.
@@ -232,59 +195,39 @@ exit_decrypt:
 *	@text - Строка кодирования.
 *	@ipaddr - Ip адрес отвравителя.
 */
-static char *illenc_encrypt(unsigned char *text, char *ipaddr)
+static unsigned char *illenc_encrypt(unsigned char *text,
+	char *ipaddr)
 {
-	uint8_t *bpkey, nonce[8] = {
-		0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
-	};
-	unsigned char *buffer;
+	unsigned char *buffer = NULL, *pkey;
 	struct node_list node;
-	unsigned int len = 0;
-
-	if (!text || text == NULL || !ipaddr || ipaddr == NULL
-		|| (len = strlen((char *)text)) > MAXTEXTSIZE) {
-		fprintf(errf, "Error: Can't encrypt message.\n");
+	unsigned int len;
+	
+	if (!text || text == NULL || !ipaddr || strlen(ipaddr) < 7)
 		return NULL;
-	}
 
-	buffer = (unsigned char *)malloc(MAXTEXTSIZE);
-	memset(buffer, '\0', MAXTEXTSIZE);
+	len = MAXTEXTSIZE + 100 + crypto_box_SEALBYTES;
 	node = db->nodeinfo(ipaddr);
 
-	if (node.hash == NULL)
+	if (strlen((char *)text) > MAXTEXTSIZE
+		|| !node.ipaddr || !node.hash)
 		goto exit_encrypt;
 
-	bpkey = illenc_hex2byte(node.hash);
-	if (crypto_box_easy(buffer, text, len, nonce, bpkey,
-		pkeys->secret) != 0)
-		fprintf(errf, "Error: Can't open cryptobox(2).\n");
+	buffer = (unsigned char *)malloc(len);
+	pkey = illenc_hex2byte(node.hash);
+	memset(buffer, '\0', len);
+
+	crypto_box_seal(buffer, text, MAXTEXTSIZE, pkey);
 
 exit_encrypt:
-	if (bpkey && bpkey != NULL)
-		free(bpkey);
-	if (node.hash != NULL) {
-		free(node.ipaddr);
-		free(node.hash);
-	}
-	//return illenc_byte2hex((unsigned char *)buffer, len);
-	return "dfsgdsg";
+	if (pkey)
+		free(pkey);
+	return buffer;
 }
 /**
-*	illenc_rbytes - Функция получения рандомных значений.
-*
-*	@buffer - Буфер для записи.
-*	@size - Длина записи.
+*	illenc_publickey - Функция возврата публичного ключа / логина.
 */
-static void illenc_rbytes(uint8_t buffer[], long long size)
+static char *illenc_publickey()
 {
-	int fd, rc;
-
-	fd = open("/dev/urandom", O_RDONLY);
-	if (fd < 0) {
-		fprintf(stderr, "Error: Failed to open /dev/urandom.\n");
-		return;
-	}
-
-	if ((rc = read(fd, buffer, size)) >= 0)
-		close(fd);
+	return illenc_byte2hex(pkeys->public,
+			crypto_box_PUBLICKEYBYTES);
 }

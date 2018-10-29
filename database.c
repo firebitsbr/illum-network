@@ -39,9 +39,6 @@ static FILE *errf;
 */
 bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errfile)
 {
-#ifdef ILLUMDEBUG
-	printf("\nDatabase init...\n");
-#endif
 	int st_sqlite3 = -100;
 	bool status = false;
 
@@ -79,9 +76,6 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errfile)
 		&& dbstruct->unstatic)
 		status = true;
 
-#ifdef ILLUMDEBUG
-	printf("%s.\n", status ? "Ok" : "Fail");
-#endif
 	return status;
 }
 /**
