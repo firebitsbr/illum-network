@@ -5,7 +5,6 @@
 *	@mrrva - 2018
 */
 #include "./encryption.h"
-#define MESSAGE (const unsigned char *) "Message"
 /**
 *	Прототипы приватных функций
 */
