@@ -33,7 +33,7 @@ int main()
 	}
 
 	//router.new(0, "192.168.1.42", NULL);
-	router.updnodes(false);
+	//router.updnodes(false);
 	thrds = srv.start(srv);
 
 	/* You can send a text to some ip */

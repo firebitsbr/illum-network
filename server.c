@@ -99,6 +99,9 @@ static void *illsrv_server()
 		memset(message, '\0', MAXTEXTSIZE);
 		memset(ipclient, '\0', 100);
 
+		if (rte->updnodes)
+			rte->updnodes(true);
+
 		bind(socket_master, (struct sockaddr *)&server, sizeof(server));
 		mlength = recvfrom(socket_master, message, MAXTEXTSIZE, MSG_DONTWAIT,
 							(struct sockaddr *)&client, &sendsize);
@@ -152,8 +155,6 @@ static void *illsrv_client()
 			fprintf(errfile, "Error: Can't send message (client).\n");
 		else
 			database->removetask(task.id);
-
-		rte->updnodes(true);
 	}
 
 	if (socket_master > 0) {

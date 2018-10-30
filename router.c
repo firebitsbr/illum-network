@@ -80,8 +80,8 @@ static void illrouter_readroute(char *data, char *ipaddr)
 		{ILL_STRAIGHT, illrouter_straight, true},
 		{ILL_NEWNODE, illrouter_newnode, true},
 		{ILL_ONION, illrouter_onion, false},
-		{ILL_PING, illrouter_ping, false},
-		{ILL_STAT, illrouter_stat, false}
+		{ILL_STAT, illrouter_stat, false},
+		{ILL_PING, illrouter_ping, true}
 	};
 	unsigned int type = FUNCNULL;
 	char **content, *json;
@@ -325,7 +325,7 @@ static void illrouter_ping(json_object *jobj, struct headers msg,
 		fprintf(errfile, "Error: Invalid json object(2).\n");
 		return;
 	}
-	if (!db->isset_node(ipaddr, NULL, 1)) {
+	if (db->isset_node(ipaddr, NULL, 1)) {
 		fprintf(errfile, "Warring: Except in ping.\n");
 		return;
 	}
@@ -430,8 +430,10 @@ static void illrouter_updnodes(bool use_time)
 			illrouter_newroute(ILL_PING, nodes[i].ipaddr, NULL);
 		}
 
-		free(nodes[i].ipaddr);
-		free(nodes[i].hash);
+		if (nodes[i].ipaddr)
+			free(nodes[i].ipaddr);
+		if (nodes[i].hash)
+			free(nodes[i].hash);
 	}
 
 	free(nodes);

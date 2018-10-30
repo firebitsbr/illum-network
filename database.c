@@ -122,8 +122,8 @@ static void illdb_ping(char *ipaddr)
 
 	ping = time(NULL);
 	sql = (char *)malloc(len + 100);
-	sprintf(sql, "UPDATE `nodes` SET `ping_t`='%ld' WHERE "
-		"`ip`='%s' AND `status`='1';", ping, ipaddr);
+	sprintf(sql, "UPDATE `nodes` SET `ping_t`='%ld', `status`='1'"
+		" WHERE `ip`='%s' AND `status`='0';", ping, ipaddr);
 
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE)
@@ -144,18 +144,19 @@ static void illdb_unstatic(char *ipaddr)
 	sqlite3_stmt *rs = NULL;
 	char *sql;
 
-	if (!ipaddr || ipaddr == NULL) {
+	if (!ipaddr || ipaddr == NULL || strlen(ipaddr) < 7) {
 		fprintf(errf, "Error: Incorrect param in illdb_unstatic.\n");
 		return;
 	}
 
-	sql = (char *)malloc(strlen(ipaddr) + 40);
+	sql = (char *)malloc(strlen(ipaddr) + 100);
 	sprintf(sql, "UPDATE `nodes` SET `status`='0' WHERE `ip`='%s'",
 		ipaddr);
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
 	sqlite3_step(rs);
 
-	sqlite3_finalize(rs);
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
 	free(sql);
 }
 /**
@@ -271,8 +272,7 @@ static struct node_list illdb_nodeinfo(char *ipaddr)
 	}
 
 	sql = (char *)malloc(len + 100);
-	sprintf(sql, "SELECT * FROM `nodes` WHERE `ip`='%s' "
-		"AND `status`='1';", ipaddr);
+	sprintf(sql, "SELECT * FROM `nodes` WHERE `ip`='%s'", ipaddr);
 
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_ROW) {

@@ -95,10 +95,10 @@ static void illenc_genkeys(struct userkeys *keys)
 	db->setvar("SECRETKEY", secret);
 
 exit_genkeys:
-	if (byte_public != NULL && byte_secret != NULL) {
+	if (byte_public != NULL)
 		free(byte_public);
+	if (byte_secret != NULL)
 		free(byte_secret);
-	}
 	free(public);
 	free(secret);
 }
@@ -185,7 +185,7 @@ static unsigned char *illenc_decrypt(unsigned char *text)
 	if (crypto_box_seal_open(buffer, text, len, pkeys->public,
 		pkeys->secret) != 0)
 		fprintf(errf, "Error: Can't decrypt message.\n");
-	
+
 	return buffer;
 }
 /**
@@ -208,14 +208,15 @@ static unsigned char *illenc_encrypt(unsigned char *text,
 	node = db->nodeinfo(ipaddr);
 
 	if (strlen((char *)text) > MAXTEXTSIZE
-		|| !node.ipaddr || !node.hash)
+		|| !node.ipaddr || node.hash == NULL)
 		goto exit_encrypt;
 
 	buffer = (unsigned char *)malloc(len);
 	pkey = illenc_hex2byte(node.hash);
 	memset(buffer, '\0', len);
 
-	crypto_box_seal(buffer, text, MAXTEXTSIZE, pkey);
+	if (pkey != NULL)
+		crypto_box_seal(buffer, text, MAXTEXTSIZE, pkey);
 
 exit_encrypt:
 	if (pkey)

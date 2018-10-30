@@ -1,4 +1,6 @@
 #include "../sources/encryption.h"
+#include <time.h>
+
 #define MESSAGE (const unsigned char *) "Message"
 #define MESSAGE_LEN 7
 #define CIPHERTEXT_LEN (crypto_box_SEALBYTES + MESSAGE_LEN)
@@ -39,8 +41,6 @@ unsigned char *illenc_hex2byte(char *string)
 
 	return data;
 }
-
-
 
 int main()
 {
@@ -103,7 +103,7 @@ for (int i = 0; i < 8; i++) {
 	printf("2) %s\n\n", decrypted);
 */
 
-	unsigned char *hexmess = enc.encrypt("Hello world!7779", "myyyyyyy");
+	//unsigned char *hexmess = enc.encrypt("Hello world!7779", "192.168.1.42");
 	//unsigned char *sdf = illenc_hex2byte("a9fc5433432d5e6bf895913d8313e5eb3988297c8de51e101cdc6296e4749a7d2c96d7bed8364a8ba11345df39db8db30b40586f4fda049c44ac1810793e74d05048fd162f14265f08ae0e982accb683ea61f14fd10e4d626d9c1975b08cacb17878");
 	//printf("aaaaaaaaaaa<<< %s\n\n|%ld - %d|\n\n", hexmess, strlen((char *)hexmess), crypto_box_SEALBYTES);
 
@@ -114,7 +114,37 @@ for (int i = 0; i < 8; i++) {
 	}
 	printf("2) %s\n\n", decrypted);
 */
-	printf("%s\n", enc.decrypt(hexmess));
+	//printf("%s\n", enc.decrypt(hexmess));
 	//unsigned char *decrtt = 
+	bool use_time = true;
+	struct node_list *nodes;
+	unsigned int len;
+	time_t ntime;
+
+	nodes = db.nodelist(&len);
+	ntime = time(NULL);
+
+	if (len == 0 || !nodes || nodes == NULL)
+		return 1;
+
+printf("%d ! \n", len);
+
+	for (int i = 0; i < len; i++) {
+		if ((((unsigned long)ntime - nodes[i].ping > UPDTIME)
+			&& use_time) || !use_time) {
+			printf("here!\n\n");
+		}
+
+		free(nodes[i].ipaddr);
+		free(nodes[i].hash);
+	}
+
+	free(nodes);
+
+
+
+
+
+
 	return 0;
 }
