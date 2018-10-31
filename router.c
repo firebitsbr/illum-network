@@ -95,7 +95,7 @@ static void illrouter_readroute(char *data, char *ipaddr)
 	}
 
 	if (content[1] && content[1] != NULL)
-		buffer = ncrpt->decrypt(content[1], ipaddr);
+		buffer = encrpt->decrypt(content[1], ipaddr);
 	json = content[0]; //= encrpt->decrypt(content[0], ipaddr);
 
 	if (!(jobj = json_tokener_parse(json)) || !ipaddr
@@ -170,8 +170,8 @@ static char **illrouter_explode(char *content)
 */
 static void illrouter_newroute(enum illheader type, char *ipaddr, char *text)
 {
-	char *json, *hash, *buffer = NULL;
 	unsigned int nodenum = 0;
+	char *json, *hash;
 	json_object *jobj;
 
 	if (!ipaddr || ipaddr == NULL || strlen(ipaddr) < 7) {
@@ -183,11 +183,6 @@ static void illrouter_newroute(enum illheader type, char *ipaddr, char *text)
 		fprintf(errfile, "Error: Incorrect args for type %d.\n", type);
 		return;
 	}
-
-	if (text && text != NULL && (int)type > 9)
-		buffer = encrpt->encrypt(text, ipaddr);
-	//buffer = (char *)malloc(strlen(text) + 10);
-	//strcpy(buffer, text);
 
 	jobj = json_object_new_object();
 	hash = encrpt->publickey();
@@ -203,7 +198,7 @@ static void illrouter_newroute(enum illheader type, char *ipaddr, char *text)
 	}
 
 	json = (char *)json_object_to_json_string(jobj);
-	db->newtask(ipaddr, buffer, json);
+	db->newtask(ipaddr, text, json);
 
 	if (jobj && jobj != NULL)
 		json_object_put(jobj);
