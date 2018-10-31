@@ -98,9 +98,7 @@ static void *illsrv_server()
 		memset(server.sin_zero, '\0', sizeof(server.sin_zero));
 		memset(message, '\0', MAXTEXTSIZE);
 		memset(ipclient, '\0', 100);
-
-		if (rte->updnodes)
-			rte->updnodes(true);
+		rte->updnodes(true);
 
 		bind(socket_master, (struct sockaddr *)&server, sizeof(server));
 		mlength = recvfrom(socket_master, message, MAXTEXTSIZE, MSG_DONTWAIT,

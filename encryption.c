@@ -131,37 +131,17 @@ static char *illenc_byte2hex(unsigned char *bytes, int len)
 */
 static unsigned char *illenc_hex2byte(char *string)
 {
-	int length, value = 0;
+	unsigned int len, slen;
 	unsigned char *data;
-	bool flag = false;
 
-	if (!string || string == NULL || strlen(string) % 2 != 0)
+	if (!string || string == NULL
+		|| (slen = strlen(string)) % 2 != 0)
 		return NULL;
 
-	length = strlen(string);
-	data = (unsigned char *)malloc(length / 2);
-	memset(data, '\0', length / 2);
-
-	for (int i = 0; i < length; i++, value = 0) {
-		if (string[i] >= '0' && string[i] <= '9')
-			value = string[i] - '0';
-		else if (string[i] >= 'A' && string[i] <= 'F')
-			value = 10 + string[i] - 'A';
-		else if (string[i] >= 'a' && string[i] <= 'f')
-			value = 10 + string[i] - 'a';
-		else {
-			flag = true;
-			break;
-		}
-
-		data[(i / 2)] += value << (((i + 1) % 2) * 4);
-	}
-
-	if (flag) {
-		free(data);
-		return NULL;
-	}
-
+	len = slen / 2 + 1;
+	data = (unsigned char *)malloc(len);
+	sodium_hex2bin(data, len, string, slen, NULL,
+					NULL, NULL);
 	return data;
 }
 /**

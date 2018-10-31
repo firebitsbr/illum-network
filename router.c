@@ -84,6 +84,7 @@ static void illrouter_readroute(char *data, char *ipaddr)
 		{ILL_PING, illrouter_ping, true}
 	};
 	unsigned int type = FUNCNULL;
+	unsigned char *buffer;
 	char **content, *json;
 	struct headers msg;
 	json_object *jobj;
@@ -92,8 +93,10 @@ static void illrouter_readroute(char *data, char *ipaddr)
 		fprintf(errfile, "Error: Incorrect data in explode.\n");
 		return;
 	}
-	//json = encrpt->decrypt(content[0], ipaddr);
-	json = content[0];
+
+	if (content[1] && content[1] != NULL)
+		buffer = ncrpt->decrypt(content[1], ipaddr);
+	json = content[0]; //= encrpt->decrypt(content[0], ipaddr);
 
 	if (!(jobj = json_tokener_parse(json)) || !ipaddr
 		|| ipaddr == NULL || strlen(ipaddr) < 7) {
@@ -112,7 +115,7 @@ static void illrouter_readroute(char *data, char *ipaddr)
 		}
 	if (type != FUNCNULL && func[type].name && (func[type].call
 		|| db->isset_node(ipaddr, NULL, 1)))
-		func[type].name(jobj, msg, ipaddr, content[1]);
+		func[type].name(jobj, msg, ipaddr, buffer);
 
 exit_create:
 	if (content[0]) 
@@ -181,8 +184,8 @@ static void illrouter_newroute(enum illheader type, char *ipaddr, char *text)
 		return;
 	}
 
-	//if (text && text != NULL)
-		//buffer = encrpt->encrypt(text, ipaddr);
+	if (text && text != NULL && (int)type > 9)
+		buffer = encrpt->encrypt(text, ipaddr);
 	//buffer = (char *)malloc(strlen(text) + 10);
 	//strcpy(buffer, text);
 
