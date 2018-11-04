@@ -59,8 +59,8 @@ static illdb *db;
 bool illrouter_init(illrouter *illr, illdb *database, illenc *enc,
 	FILE *errf)
 {
-	if (!(errfile = errf) || !(db = database) || errfile == NULL
-		|| !(encrpt = enc))
+	if (!(errfile = errf) || !(db = database)
+		|| errfile == NULL || !(encrpt = enc))
 		return false;
 
 	illr->updnodes = illrouter_updnodes;
@@ -112,7 +112,7 @@ static void illrouter_readroute(char *data, char *ipaddr)
 		goto exit_create;
 	}
 
-	for (int i = 0; i < 6; i++) 
+	for (int i = 0; i < 6; i++)
 		if (func[i].id == msg.type) {
 			type = i;
 			break;
@@ -122,7 +122,7 @@ static void illrouter_readroute(char *data, char *ipaddr)
 		func[type].name(jobj, msg, ipaddr, buffer);
 
 exit_create:
-	if (content[0]) 
+	if (content[0])
 		free(content[0]);
 	if (content[1])
 		free(content[1]);
@@ -206,6 +206,7 @@ static void illrouter_newroute(enum illheader type, char *ipaddr, char *text)
 
 	if (jobj && jobj != NULL)
 		json_object_put(jobj);
+	free(hash);
 }
 /**
 *	illrouter_decode - Функция считывания json елементов.
@@ -394,8 +395,8 @@ static void illrouter_info(json_object *jobj, struct headers msg,
 	}
 
 	for (int i = 0; i < len; i++)
-		if (list[i].ipaddr && strlen(list[i].ipaddr) >= 7
-			&& list[i].ipaddr != ipaddr) {
+		if (list[i].ipaddr && list[i].ipaddr != ipaddr
+			&& strlen(list[i].ipaddr) >= 7) {
 			db->newtask(list[i].ipaddr, NULL, headers);
 			free(list[i].ipaddr);
 			free(list[i].hash);

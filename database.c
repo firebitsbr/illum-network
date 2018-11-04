@@ -389,7 +389,10 @@ static struct node_list *illdb_nodelist(unsigned int *num)
 		*num = 0;
 		goto exit_nodelist;
 	}
-
+/*
+	TODO:
+	* Limit of selected nodes from db.
+*/
 	data = (struct node_list *)malloc(sizeof(struct node_list) * (*num));
 	sqlite3_prepare_v2(db, "SELECT * FROM `nodes` WHERE `status`='1'",
 		-1, &rs, NULL);
