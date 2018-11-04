@@ -14,6 +14,7 @@ static int	illdb_settask(char *, char *, char *);
 static struct node_list illdb_nodeinfo(char *);
 static void illdb_currenttask(struct stask *);
 static bool illdb_issettask(char *, char *);
+static bool illdb_response(char *, char *);
 static bool	illdb_removetask(unsigned int);
 static void illdb_getvar(char *, char[]);
 static bool	illdb_newnode(char *, char *);
@@ -58,6 +59,7 @@ bool illdb_init(char *dbpath, illdb *dbstruct, FILE *errfile)
 	dbstruct->staticnode = illdb_staticnode;
 	dbstruct->removetask = illdb_removetask;
 	dbstruct->isset_node = illdb_issetnode;
+	dbstruct->response = illdb_response;
 	dbstruct->nodelist = illdb_nodelist;
 	dbstruct->unstatic = illdb_unstatic;
 	dbstruct->nodeinfo = illdb_nodeinfo;
@@ -558,6 +560,36 @@ exit_getvar:
 	free(sql);
 }
 /**
+*	illdb_response - Функция записи ответа от другой ноды.
+*
+*	@hash - Хэш клиента откуда пришел ответ.
+*	@text - Текст ответа.
+*/
+static bool illdb_response(char *hash, char *text)
+{
+	sqlite3_stmt *rs = NULL;
+	unsigned int len = 0;
+	bool status = false;
+	char *sql;
+
+	if (!hash || hash == NULL || !text || text == NULL)
+		return status;
+	if ((len = strlen(hash) + strlen(text)) > MAXTEXTSIZE + 120)
+		return status;
+
+	sql = (char *)malloc(len + 100);
+	sprintf(sql, "INSERT INTO `response` VALUES (NULL, '%s', '%s');",
+		hash, text);
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+	if (sqlite3_step(rs) == SQLITE_DONE)
+		status = true;
+
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	free(sql);
+	return status;
+}
+/**
 *	illdb_setvar - Функция записи значения в таблицу
 *	настроек.
 *
@@ -622,7 +654,7 @@ static bool illdb_tables()
 		goto exit_tables;
 	}
 	sqlite3_prepare_v2(db, "CREATE TABLE IF NOT EXISTS `response` ("
-	"`id` INTEGER PRIMARY KEY AUTOINCREMENT,`id_tsk` int(11) NOT NULL,"
+	"`id` INTEGER PRIMARY KEY AUTOINCREMENT,`hash` text NOT NULL,"
 	"`text` text NOT NULL);", -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(errf, "Error: Sqlite can't create response table.\n");

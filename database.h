@@ -37,7 +37,7 @@ struct stask {
 
 typedef struct {
 	bool (*removetask)(), (*newnode)(), (*isset_node)(),
-		(*setvar)();
+		(*setvar)(), (*response)();
 	void (*currenttask)(), (*staticnode)(), (*ping)(),
 		(*getvar)(), (*unstatic)();
 	struct node_list *(*nodelist)(), (*nodeinfo)();

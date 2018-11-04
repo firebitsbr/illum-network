@@ -3,6 +3,10 @@
 *	маршрутов в сети.	
 *
 *	@mrrva - 2018
+*
+*	TODO:
+*	1) Обновление IP адреса в базе при каждом запросе, хэш - якорь.
+*	2) Запись публичного ключа в базу при луковой маршрутизации.
 */
 #include "./router.h"
 #define FUNCNULL 99
@@ -33,7 +37,7 @@ static void illrouter_straight(json_object *, struct headers, char *, char *);
 static void illrouter_newnode(json_object *, struct headers, char *, char *);
 static void illrouter_onion(json_object *, struct headers, char *, char *);
 static void illrouter_ping(json_object *, struct headers, char *, char *);
-static void illrouter_stat(json_object *, struct headers, char *, char *);
+static void illrouter_info(json_object *, struct headers, char *, char *);
 static void illrouter_newroute(enum illheader, char *, char *);
 static bool illrouter_decode(json_object *, struct headers *);
 static void illrouter_readroute(char *, char *);
@@ -80,8 +84,8 @@ static void illrouter_readroute(char *data, char *ipaddr)
 		{ILL_STRAIGHT, illrouter_straight, true},
 		{ILL_NEWNODE, illrouter_newnode, true},
 		{ILL_ONION, illrouter_onion, false},
-		{ILL_STAT, illrouter_stat, false},
-		{ILL_PING, illrouter_ping, true}
+		{ILL_PING, illrouter_ping, true},
+		{ILL_INFO, illrouter_info, true}
 	};
 	unsigned int type = FUNCNULL;
 	unsigned char *buffer;
@@ -339,16 +343,70 @@ static void illrouter_ping(json_object *jobj, struct headers msg,
 	illrouter_newroute(ILL_PING, ipaddr, NULL);
 }
 /**
-*	illrouter_stat - Функция создания маршрута для
-*	сбора статистики сети.
+*	illrouter_info - Функция создания маршрута для
+*	отправки информации о себе.
 *
 *	@jobj - Json объект маршрута.
 *	@ipaddr - Ip с которого пришел запрос.
 */
-static void illrouter_stat(json_object *jobj, struct headers msg,
+static void illrouter_info(json_object *jobj, struct headers msg,
 	char *ipaddr, char *content)
 {
+	char *publickey, *headers, *cipaddr;
+	unsigned int length = 0, len;
+	struct node_list *list;
 
+	if (!jobj || jobj == NULL || !ipaddr || ipaddr == NULL) {
+		fprintf(errfile, "Warring: Invalid json object(3).\n");
+		return;
+	}
+	if (!msg.hash || msg.hash == NULL) {
+		fprintf(errfile, "Warring: Incorrect headers.\n");
+		return;
+	}
+
+	cipaddr = (msg.ipaddr) ? msg.ipaddr : ipaddr;
+	publickey = encrpt->publickey();
+	length = strlen(publickey);
+
+	if (strncmp(publickey, msg.hash, length) == 0) {
+		if (!db->isset_node(cipaddr, NULL, 0)
+			&& !db->isset_node(cipaddr, NULL, 1)) {
+			db->newnode(cipaddr, msg.hash);
+			illrouter_newroute(ILL_INFO, cipaddr, NULL);
+		}
+		
+		goto exit_info;
+	}
+
+	list = db->nodelist(&len);
+	if (len == 0 || !list)
+		goto exit_info;
+
+	if (!msg.ipaddr || msg.ipaddr == NULL || strlen(msg.ipaddr) < 7)
+		json_object_object_add(jobj, "ipaddr", 
+								json_object_new_string(ipaddr));
+
+	if (!(headers = (char *)json_object_to_json_string(jobj))) {
+		fprintf(errfile, "Error: Invalid json string in "
+				"resend (info).\n");
+		goto exit_info;
+	}
+
+	for (int i = 0; i < len; i++)
+		if (list[i].ipaddr && strlen(list[i].ipaddr) >= 7
+			&& list[i].ipaddr != ipaddr) {
+			db->newtask(list[i].ipaddr, NULL, headers);
+			free(list[i].ipaddr);
+			free(list[i].hash);
+		}
+
+exit_info:
+	if (headers)
+		free(headers);
+	if (list)
+		free(list);
+	free(publickey);
 }
 /**
 *	illrouter_befriends - Функция создания маршрута для
@@ -361,14 +419,14 @@ static void illrouter_befriends(json_object *jobj, struct headers msg,
 	char *ipaddr, char *content)
 {
 	if (!jobj || jobj == NULL || !ipaddr || ipaddr == NULL) {
-		fprintf(errfile, "Warring: Invalid json object(1).\n");
+		fprintf(errfile, "Warring: Invalid json object(4).\n");
 		return;
 	}
 	if (db->isset_node(ipaddr, NULL, 1)) {
 		fprintf(errfile, "Warring: Except in befriends.\n");
 		return;
 	}
-	if (db->nodenum(errfile) >= MAXNODES)
+	if (db->nodenum() >= MAXNODES)
 		return;
 
 	if (db->isset_node(ipaddr, NULL, 0)) {
@@ -390,7 +448,16 @@ static void illrouter_befriends(json_object *jobj, struct headers msg,
 static void illrouter_straight(json_object *jobj, struct headers msg,
 	char *ipaddr, char *content)
 {
+	if (!jobj || jobj == NULL || !ipaddr || ipaddr == NULL) {
+		fprintf(errfile, "Warring: Invalid json object(5).\n");
+		return;
+	}
+	if (!content || strlen(content) < 2 || !msg.hash) {
+		fprintf(errfile, "Warring: Invalid data in straight.\n");
+		return;
+	}
 
+	db->response(msg.hash, content);
 }
 /**
 *	illrouter_onion - Функция создания маршрута для

@@ -25,7 +25,7 @@
 *	Доступные структуры
 */
 enum illheader {
-	ILL_NEWNODE = 0, ILL_PING = 1, ILL_STAT = 2,
+	ILL_NEWNODE = 0, ILL_PING = 1, ILL_INFO = 2,
 	ILL_BEFRIENDS = 3, ILL_STRAIGHT = 10, ILL_ONION = 11
 /*
 	ILL_NEWNODE и ILL_STRAIGHT единственные доступные
