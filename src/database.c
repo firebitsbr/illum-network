@@ -13,6 +13,9 @@ static FILE *error;
 /**
 *	Прототипы приватных функций.
 */
+static int illum_dbsettask(char *, char *, char *);
+static bool illum_dbgettask(struct illumtask *);
+static bool illum_dbissettask(char *, char *);
 static bool illum_dbissetnode(char *, char *);
 static bool illum_dbnewnode(char *, char *);
 static void illum_dbgetvar(char *, char []);
@@ -37,7 +40,7 @@ bool illum_dbinit(struct illumdb *database, char *filepath,
 		printf("Error: Incorrect args in dbinit.\n");
 		return false;
 	}
-	if ((status = sqlite3_open(dbpath, &db)) != SQLITE_OK
+	if ((status = sqlite3_open(filepath, &db)) != SQLITE_OK
 		|| !illum_dbtables()) {
 		if (status != SQLITE_OK)
 			fprintf(error, "Can't open database: %s\n",
@@ -48,6 +51,7 @@ bool illum_dbinit(struct illumdb *database, char *filepath,
 
 	database->issetnode = illum_dbissetnode;
 	database->gettask = illum_dbgettask;
+	database->newtask = illum_dbsettask;
 	database->newnode = illum_dbnewnode;
 	database->setvar = illum_dbsetvar;
 	database->getvar = illum_dbgetvar;
@@ -107,6 +111,7 @@ static bool illum_dbgettask(struct illumtask *task)
 {
 	sqlite3_stmt *rs = NULL;
 	bool status = false;
+	char *sql;
 
 	if (!task) {
 		fprintf(error, "Error: Incorrect arg in dbgettask.\n");
@@ -123,6 +128,15 @@ static bool illum_dbgettask(struct illumtask *task)
 	task->ipaddr = (char *)sqlite3_column_text(rs, 1);
 	task->text = (char *)sqlite3_column_text(rs, 2);
 
+	if (!DBDEBUG) {
+		sql = (char *)malloc(1000);
+		sprintf(sql, "DELETE FROM `tasks` WHERE `id`='%d'",
+			task->id);
+
+		sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+		sqlite3_step(rs);
+		free(sql);
+	}
 	status = true;
 
 exit_gettask:
@@ -153,7 +167,7 @@ static bool illum_dbissetnode(char *ipaddr, char *hash)
 		type = false;
 	}
 	else {
-		fprintf(errf, "Error: Incorrect args in issetnode.\n");
+		fprintf(error, "Error: Incorrect args in issetnode.\n");
 		return status;
 	}
 	if ((len = strlen(value)) > 200) 
@@ -212,6 +226,92 @@ exit_getvar:
 	free(sql);
 }
 /**
+*	illum_dbissettask - Функция проверяет одинаковые запросы в бд.
+*
+*	@ipaddr - Ip адрес получателя сообщения.
+*	@headers - Заголовки к сообщению.
+*/
+static bool illum_dbissettask(char *ipaddr, char *headers)
+{
+	sqlite3_stmt *rs = NULL;
+	unsigned int len = 0;
+	bool status = true;
+	char *sql;
+
+	if (!ipaddr || ipaddr == NULL || !headers
+		|| headers == NULL) {
+		fprintf(error, "Error: Incorrect args in issettask\n");
+		return status;
+	}
+	if ((len = strlen(ipaddr) + strlen(headers)) > 600)
+		return status;
+
+	sql = (char *)malloc(len + 100);
+	sprintf(sql, "SELECT COUNT(*) FROM `tasks` WHERE `ip`='%s' "
+		"AND `headers`='%s';", ipaddr, headers);
+
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+	if (sqlite3_step(rs) == SQLITE_ROW
+		&& atoi((const char *)sqlite3_column_text(rs, 0)) == 0)
+		status = false;
+
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	free(sql);
+
+	return status;
+}
+/**
+*	illum_dbsettask - Функция создания новой задачи.
+*
+*	@ipaddr - Ip адрес получателя сообщения.
+*	@text - Текст сообщения.
+*	@headers - Заголовки к сообщению.
+*/
+static int illum_dbsettask(char *ipaddr, char *text, char *headers)
+{
+	sqlite3_stmt *rs = NULL;
+	unsigned int length = 0;
+	int id = -1;
+	char *sql;
+
+	if (!ipaddr || strlen(ipaddr) < 7
+		|| !headers || strlen(headers) < 8) {
+		fprintf(error, "Error: Incorrect args in settask.\n");
+		return id;
+	}
+	if (illum_dbissettask(ipaddr, headers)) 
+		return id;
+
+	if (text && text != NULL)
+		length += strlen(text);
+	if ((length += strlen(ipaddr) + strlen(headers)) > MAXTEXTSIZE) {
+		fprintf(error, "Error: Text size more then you can write.\n");
+		return id;
+	}
+
+	sql = (char *)malloc(length + 100);
+	sprintf(sql, "INSERT INTO `tasks` VALUES (NULL, '%s', '%s', '%s');",
+		ipaddr, ((!text || text == NULL) ? "" : text), headers);
+
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_DONE) {
+		fprintf(error, "Error: Can't create new task.\n");
+		goto exit_settask;
+	}
+
+	sqlite3_prepare_v2(db, "SELECT last_insert_rowid();", -1, &rs, NULL);
+	if (sqlite3_step(rs) != SQLITE_DONE)
+		goto exit_settask;
+	id = atoi((const char *)sqlite3_column_text(rs, 0));
+
+exit_settask:
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	free(sql);
+	return id; /* -1 is error */
+}
+/**
 *	illum_dbsetvar - Функция записи значения в таблицу
 *	настроек.
 *
@@ -267,9 +367,12 @@ static void illum_dbremovecache()
 {
 	sqlite3_stmt *rs = NULL;
 
-	sqlite3_prepare_v2(db, "DELETE FROM `onion`", -1, &rs, NULL);
+	sqlite3_prepare_v2(db, "DELETE FROM `onion`", -1,
+		&rs, NULL);
 	sqlite3_step(rs);
-	sqlite3_prepare_v2(db, "DELETE FROM `tasks`", -1, &rs, NULL);
+
+	sqlite3_prepare_v2(db, "DELETE FROM `tasks`", -1,
+		&rs, NULL);
 	sqlite3_step(rs);
 
 	if (rs && rs != NULL)

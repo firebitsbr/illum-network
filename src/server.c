@@ -133,7 +133,7 @@ static void *illum_serversend()
 	unsigned int length = 0;
 	char *message;
 
-	client.sin_port = htons(ILLUM_PORT);
+	client.sin_port = htons(ILLUMPORT);
 	client.sin_family = AF_INET;
 	message = (char *)malloc(1);
 

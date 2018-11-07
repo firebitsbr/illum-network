@@ -26,30 +26,43 @@
 /**
 *	Константы проекта.
 */
-#define MAXNODES		5000
+#define MAXNODES		500
 #define MAXTEXTSIZE		9000
 #define SERVER_TIMEOUT	6
 #define ILLUMPORT		110
 #define THREADLIMIT		7
-#define ILLUMDEBUG		(bool)true
+#define DBDEBUG			(bool)true
+#define SRVDEBUG		(bool)true
+#define RTEDEBUG		(bool)true
+#define ENCDEBUG		(bool)true
 /**
 *	Доступные структуры.
 */
 enum illumheader {
-	NEWNODE = 0, OKREQUEST = 1, FAILREQUEST = 2,
+	INFOREQUEST = 0, OKREQUEST = 1, FAILREQUEST = 2,
 	MSTRAIGHT = 3, MONION = 4
 };
 
+struct userkeys {
+	unsigned char public[crypto_box_PUBLICKEYBYTES];
+	unsigned char secret[crypto_box_SECRETKEYBYTES];
+};
+
 struct illumserver {
-	unsigned int thr_number;
 	pthread_t resv, send;
 	bool (*start)();
+};
+
+struct illumtask {
+	char *ipaddr, *text, *headers;
+	unsigned int id;
 };
 
 struct illumdb {
 	bool (*issetnode)(), (*newnode)(), (*setvar)(),
 		(*gettask)();
 	void (*getvar)();
+	int (*newtask)();
 };
 
 struct illumrouter {
@@ -57,12 +70,17 @@ struct illumrouter {
 };
 
 struct illumencrypt {
-
+	unsigned char *(*hex2byte)(), *(*decrypt)(),
+		*(*encrypt)();
+	char *(*publickey)(), *(*byte2hex)();
+	struct userkeys keys;
 };
 /**
 *	Прототипы доступных функций.
 */
 bool illum_serverinit(struct illumserver *, struct illumdb *,
 	struct illumrouter *, FILE *);
+bool illum_encryptinit(struct illumencrypt *, struct illumdb *,
+	FILE *);
 bool illum_dbinit(struct illumdb *, char *, FILE *);
 #endif
