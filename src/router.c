@@ -34,8 +34,20 @@ static FILE *error;
 /**
 *	Прототипы приватных функций.
 */
-static bool illum_routernewtask(enum illumheader, char *, char *);
-static bool illum_routerdecode(json_object *, struct headers *);
+static void illum_routerstraight(json_object *, struct headers,
+	char *, char *);
+static void illum_routeronion(json_object *, struct headers,
+	char *, char *);
+static void illum_routerinfo(json_object *, struct headers,
+	char *, char *);
+static void illum_routerfail(json_object *, struct headers,
+	char *, char *);
+static void illum_routerok(json_object *, struct headers,
+	char *, char *);
+static bool illum_routernewtask(enum illumheader, char *,
+	char *);
+static bool illum_routerdecode(json_object *,
+	struct headers *);
 static char *illum_routerheaders(enum illumheader, char *);
 static bool illum_routerread(char *, char *);
 static void illum_freepointer(void **, int);
@@ -167,11 +179,11 @@ exit_read:
 static void *illum_routeprocessing(void *args)
 {
 	struct functions func[] = {
-		{MSTRAIGHT, illum_reouterstraight},
-		{INFOREQUEST, illum_reouterinfo},
-		{FAILREQUEST, illum_reouterfail},
-		{OKREQUEST, illum_reouterok},
-		{MONION, illum_reouteronion}
+		{MSTRAIGHT, illum_routerstraight},
+		{INFOREQUEST, illum_routerinfo},
+		{FAILREQUEST, illum_routerfail},
+		{OKREQUEST, illum_routerok},
+		{MONION, illum_routeronion}
 	};
 	char **argument = ((char **)args), **content;
 	unsigned int type = FUNCNULL;
@@ -216,14 +228,17 @@ exit_processing:
 static bool illum_routerdecode(json_object *jobj,
 	struct headers *msg)
 {
-	const char *(*json_string)() = json_object_get_string;
-	bool status = false;
+	const char *(*json_string)();
+	bool status;
 
 	if (!jobj || !msg) {
 		fprintf(error, "Error: Invalid args in decode.\n");
 		return status;
 	}
+
+	json_string = json_object_get_string;
 	msg->is_onion = false;
+	status = false
 
 	json_object_object_foreach (jobj, key, value) {
 		if (strlen(key) < 2 || strlen(key) > 15)
@@ -279,6 +294,91 @@ static char *illum_routerheaders(enum illumheader type,
 	free(hash);
 
 	return json;
+}
+/**
+*	illum_routerstraight - Функция создания нового маршрута
+*	для отправки прямых сообщений.
+*
+*	@jobj - Json объект маршрута.
+*	@msg - Структура заголовков.
+*	@ipaddr - Ip отправившего клиента.
+*	@data - Контент сообщения.
+*/
+static void illum_routerstraight(json_object *jobj,
+	struct headers msg, char *ipaddr, char *data)
+{
+	if (!jobj || !ipaddr || !data) {
+		fprintf(error, "Error: Incorrect args in info.\n");
+		return;
+	}
+}
+/**
+*	illum_routerinfo - Функция создания нового маршрута
+*	для получения информации о ноде.
+*
+*	@jobj - Json объект маршрута.
+*	@msg - Структура заголовков.
+*	@ipaddr - Ip отправившего клиента.
+*	@data - Контент сообщения.
+*/
+static void illum_routerinfo(json_object *jobj,
+	struct headers msg, char *ipaddr, char *data)
+{
+	if (!jobj || !ipaddr || !data) {
+		fprintf(error, "Error: Incorrect args in info.\n");
+		return;
+	}
+}
+/**
+*	illum_routerfail - Функция создания нового маршрута
+*	для обработки ошибок.
+*
+*	@jobj - Json объект маршрута.
+*	@msg - Структура заголовков.
+*	@ipaddr - Ip отправившего клиента.
+*	@data - Контент сообщения.
+*/
+static void illum_routerfail(json_object *jobj,
+	struct headers msg, char *ipaddr, char *data)
+{
+	if (!jobj || !ipaddr || !data) {
+		fprintf(error, "Error: Incorrect args in info.\n");
+		return;
+	}
+}
+/**
+*	illum_routerok - Функция создания нового маршрута
+*	для обработки положительного ответа.
+*
+*	@jobj - Json объект маршрута.
+*	@msg - Структура заголовков.
+*	@ipaddr - Ip отправившего клиента.
+*	@data - Контент сообщения.
+*/
+static void illum_routerok(json_object *jobj,
+	struct headers msg, char *ipaddr, char *data)
+{
+	if (!jobj || !ipaddr || !data) {
+		fprintf(error, "Error: Incorrect args in info.\n");
+		return;
+	}
+}
+/**
+*	illum_routeronion - Функция создания нового маршрута
+*	для отправки сообщений через луковую маршрутизацию.
+*
+*	@jobj - Json объект маршрута.
+*	@msg - Структура заголовков.
+*	@ipaddr - Ip отправившего клиента.
+*	@data - Контент сообщения.
+*/
+static void illum_routeronion(json_object *jobj,
+	struct headers msg, char *ipaddr, char *data)
+{
+	if (!jobj || !ipaddr || !data) {
+		fprintf(error, "Error: Incorrect args in info.\n");
+		return;
+	}
 }
 /**
 *	illum_freepointer - Функция освобождение двухуровневого

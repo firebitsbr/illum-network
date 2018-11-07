@@ -61,8 +61,8 @@ struct illumtask {
 struct illumdb {
 	bool (*issetnode)(), (*newnode)(), (*setvar)(),
 		(*gettask)();
+	int (*newtask)(), (*nodenum)();
 	void (*getvar)();
-	int (*newtask)();
 };
 
 struct illumrouter {

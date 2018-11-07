@@ -22,6 +22,7 @@ static void illum_dbgetvar(char *, char []);
 static bool illum_dbsetvar(char *, char *);
 static void illum_dbremovecache();
 static bool illum_dbtables();
+static int illum_dbnodenum();
 /**
 *	illum_dbinit - Функция инициализации подключения
 *	к базе данных с поледующим создание структуры.
@@ -50,6 +51,7 @@ bool illum_dbinit(struct illumdb *database, char *filepath,
 	illum_dbremovecache();
 
 	database->issetnode = illum_dbissetnode;
+	database->nodenum = illum_dbnodenum;
 	database->gettask = illum_dbgettask;
 	database->newtask = illum_dbsettask;
 	database->newnode = illum_dbnewnode;
@@ -77,7 +79,8 @@ static bool illum_dbnewnode(char *ipaddr, char *hash)
 		fprintf(error, "Error: Incorrect params in newnode.\n");
 		return status;
 	}
-	if (illum_dbissetnode(ipaddr, NULL))
+	if (illum_dbissetnode(ipaddr, NULL)
+		|| illum_dbnodenum() >= MAXNODES)
 		return status;
 
 	if ((length = strlen(ipaddr) + strlen(hash)) > 300)
@@ -101,6 +104,27 @@ exit_newnode:
 	if (sql)
 		free(sql);
 	return status;
+}
+/**
+*	illum_dbnodenum - Количество нод в базе данных.
+*
+*/
+static int illum_dbnodenum()
+{
+	sqlite3_stmt *rs = NULL;
+	int length = 0;
+
+	sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM `nodes`;",
+		-1, &rs, NULL);
+	if (sqlite3_step(rs) == SQLITE_ROW)
+		goto exit_nodenum;
+
+	length = atoi((const char *)sqlite3_column_text(rs, 0));
+
+exit_nodenum:
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	return length;
 }
 /**
 *	illum_dbgettask - Функция для получения текущего задания.
