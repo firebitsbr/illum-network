@@ -8,7 +8,7 @@
 /**
 *	Глобальные переменные.
 */
-static struct userkeys *keys;
+static struct userkeys keys;
 static struct illumdb *db;
 static FILE *error;
 /**
@@ -19,7 +19,6 @@ static unsigned char *illum_decrypt(unsigned char *);
 static char *illum_byte2hex(unsigned char *, int);
 static unsigned char *illum_hex2byte(char *);
 static void illum_genkeys(struct userkeys *);
-static char *illum_publickey();
 /**
 *	illum_encryptinit - Функция инициализации модуля
 *	шифрации.
@@ -37,10 +36,8 @@ bool illum_encryptinit(struct illumencrypt *encrypt,
 		return false;
 	}
 
-	illum_genkeys(&encrypt->keys);
-	keys = &encrypt->keys;
+	illum_genkeys(&keys);
 
-	encrypt->publickey = illum_publickey;
 	encrypt->hex2byte = illum_hex2byte;
 	encrypt->byte2hex = illum_byte2hex;
 	encrypt->decrypt = illum_decrypt;
@@ -200,13 +197,4 @@ exit_encrypt:
 	if (phex)
 		free(phex);
 	return buffer;
-}
-/**
-*	illum_publickey - Функция возврата публичного ключа / логина.
-*
-*/
-static char *illum_publickey()
-{
-	return illum_byte2hex(keys->public,
-			crypto_box_PUBLICKEYBYTES);
 }

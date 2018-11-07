@@ -66,14 +66,14 @@ struct illumdb {
 };
 
 struct illumrouter {
-
+	bool (*newtask)(), (*read)();
+	char *(*headers)();
 };
 
 struct illumencrypt {
 	unsigned char *(*hex2byte)(), *(*decrypt)(),
 		*(*encrypt)();
-	char *(*publickey)(), *(*byte2hex)();
-	struct userkeys keys;
+	char *(*byte2hex)();
 };
 /**
 *	Прототипы доступных функций.
@@ -81,6 +81,8 @@ struct illumencrypt {
 bool illum_serverinit(struct illumserver *, struct illumdb *,
 	struct illumrouter *, FILE *);
 bool illum_encryptinit(struct illumencrypt *, struct illumdb *,
+	FILE *);
+bool illum_routerinit(struct illumrouter *, struct illumdb *,
 	FILE *);
 bool illum_dbinit(struct illumdb *, char *, FILE *);
 #endif

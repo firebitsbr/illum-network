@@ -9,3 +9,7 @@ database:
 encrypt:
 	rm -f ./encrypt
 	gcc -g -Wall -o encrypt testencrypt.c ../src/encryption.c ../src/database.c -std=c11 -lsodium -lsqlite3 -ljson-c -lpthread
+
+router:
+	rm -f ./router
+	gcc -g -Wall -o router testrouter.c ../src/router.c ../src/database.c -std=c11 -lsodium -lsqlite3 -ljson-c -lpthread
