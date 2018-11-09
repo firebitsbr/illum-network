@@ -154,8 +154,8 @@ static unsigned char *illum_decrypt(unsigned char *text)
 	buffer = (unsigned char *)malloc(len + 1);
 	memset(buffer, '\0', len);
 
-	if (crypto_box_seal_open(buffer, text, len, keys->public,
-		keys->secret) != 0)
+	if (crypto_box_seal_open(buffer, text, len, keys.public,
+		keys.secret) != 0)
 		fprintf(error, "Error: Can't decrypt message.\n");
 
 	if (ENCDEBUG)

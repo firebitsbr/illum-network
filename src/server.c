@@ -89,17 +89,18 @@ static void *illum_serverresv()
 	char message[MAXTEXTSIZE], ipclient[100], *okresp, *failresp,
 		*response;
 	struct sockaddr_in client, server;
-	unsigned int length = 0;
 	socklen_t sendsize;
+	int length = 0;
 
-	failresp = p_router->new(OKREQUEST, NULL);
-	okresp = p_router->new(FAILREQUEST, NULL);
+	failresp = p_router->headers(OKREQUEST, NULL);
+	okresp = p_router->headers(FAILREQUEST, NULL);
+
 	sendsize = sizeof(struct sockaddr_in);
 	server.sin_addr.s_addr = INADDR_ANY;
 	server.sin_port = htons(ILLUMPORT);
 	server.sin_family = AF_INET;
-response = failresp;
-	while (true, length = 0) {
+
+	for (;; response = failresp, length = 0) {
 		memset(server.sin_zero, '\0', sizeof(server.sin_zero));
 		memset(message, '\0', MAXTEXTSIZE);
 		memset(ipclient, '\0', 100);
@@ -108,19 +109,21 @@ response = failresp;
 		length = recvfrom(mainsocket, message, MAXTEXTSIZE, MSG_DONTWAIT,
 						(struct sockaddr *)&client, &sendsize);
 		inet_ntop(AF_INET, &client.sin_addr, ipclient, 100);
-printf(message);
-		/*if (length > 0 && message[length] == '\0'
-			&& length <= MAXTEXTSIZE && p_router->read(ipclient, message))
-			response = okresp;
-		else
-			response = failresp;*/
 
-		sendto(mainsocket, response, strlen(response), MSG_DONTWAIT,
-			(struct sockaddr *)&client, sizeof(client));
+		if (length < 0 || length > MAXTEXTSIZE)
+			continue;
+		if (SRVDEBUG)
+			printf("Received: %s from %s\n\n", message, ipclient);
+
+		if (p_router->read(ipclient, message))
+			response = okresp;
+
+		/*sendto(mainsocket, "234", 3, MSG_DONTWAIT,
+				(struct sockaddr *)&client, sizeof(client));*/
 	}
 
 	free(failresp);
-	free(okresp)
+	free(okresp);
 	pthread_exit(0);
 }
 /**
@@ -129,17 +132,19 @@ printf(message);
 */
 static void *illum_serversend()
 {
-	struct sockaddr_in client;
-	unsigned int length = 0;
+	//struct sockaddr_in client;
+	//unsigned int length = 0;
 	char *message;
 
-	client.sin_port = htons(ILLUMPORT);
-	client.sin_family = AF_INET;
+	//client.sin_port = htons(ILLUMPORT);
+	//client.sin_family = AF_INET;
 	message = (char *)malloc(1);
 
-	for (;;) {
+	/*for (;;) {
 
-	}
+	}*/
+	sleep(10);
 
+	free(message);
 	pthread_exit(0);
 }

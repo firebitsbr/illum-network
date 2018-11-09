@@ -14,6 +14,7 @@ static FILE *error;
 *	Прототипы приватных функций.
 */
 static int illum_dbsettask(char *, char *, char *);
+static struct illumnode *illum_dballnodes(int *);
 static bool illum_dbgettask(struct illumtask *);
 static bool illum_dbissettask(char *, char *);
 static bool illum_dbissetnode(char *, char *);
@@ -51,6 +52,7 @@ bool illum_dbinit(struct illumdb *database, char *filepath,
 	illum_dbremovecache();
 
 	database->issetnode = illum_dbissetnode;
+	database->nodelist = illum_dballnodes;
 	database->nodenum = illum_dbnodenum;
 	database->gettask = illum_dbgettask;
 	database->newtask = illum_dbsettask;
@@ -116,7 +118,7 @@ static int illum_dbnodenum()
 
 	sqlite3_prepare_v2(db, "SELECT COUNT(*) FROM `nodes`;",
 		-1, &rs, NULL);
-	if (sqlite3_step(rs) == SQLITE_ROW)
+	if (sqlite3_step(rs) != SQLITE_ROW)
 		goto exit_nodenum;
 
 	length = atoi((const char *)sqlite3_column_text(rs, 0));
@@ -248,6 +250,48 @@ exit_getvar:
 	if (rs && rs != NULL)
 		sqlite3_finalize(rs);
 	free(sql);
+}
+/**
+*	illum_dballnodes - Функция получения списка всех нод
+*	в базе данных.
+*
+*	@len - Указатель для записи количества нод.
+*/
+static struct illumnode *illum_dballnodes(int *len)
+{
+	const unsigned char *(*sqldata)();
+	struct illumnode *nodes;
+	sqlite3_stmt *rs = NULL;
+	int i = -1, l = 0;
+	char *sql;
+
+	sqldata = sqlite3_column_text;
+	sql = (char *)malloc(300);
+	*len = illum_dbnodenum();
+
+	sql = (char *)malloc(300);
+	nodes = (struct illumnode *)malloc(
+			sizeof(struct illumnode)* (*len + 2));
+
+	sprintf(sql, "SELECT * FROM `nodes` LIMIT %d;", MAXNODES);
+	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
+
+	while (i++, sqlite3_step(rs) == SQLITE_ROW) {
+		nodes[i].use_t = atol((const char *)sqldata(rs, 3));
+		nodes[i].id = atoi((const char *)sqldata(rs, 0));
+		nodes[i].ipaddr = (char *)malloc(20);
+		nodes[i].hash = (char *)malloc(105);
+
+		if ((l = strlen((const char *)sqldata(rs, 1))) <= 15)
+			memcpy(nodes[i].ipaddr, sqldata(rs, 1), l + 1);
+
+		if ((l = strlen((const char *)sqldata(rs, 2))) <= 99)
+			memcpy(nodes[i].hash, sqldata(rs, 2), l + 1);
+	}
+
+	if (rs && rs != NULL)
+		sqlite3_finalize(rs);
+	return nodes;
 }
 /**
 *	illum_dbissettask - Функция проверяет одинаковые запросы в бд.

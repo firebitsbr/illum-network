@@ -40,7 +40,7 @@
 */
 enum illumheader {
 	INFOREQUEST = 0, OKREQUEST = 1, FAILREQUEST = 2,
-	MSTRAIGHT = 3, MONION = 4
+	FINDNODE = 3, MSTRAIGHT = 4, MONION = 5
 };
 
 struct userkeys {
@@ -48,19 +48,26 @@ struct userkeys {
 	unsigned char secret[crypto_box_SECRETKEYBYTES];
 };
 
-struct illumserver {
-	pthread_t resv, send;
-	bool (*start)();
-};
-
 struct illumtask {
 	char *ipaddr, *text, *headers;
 	unsigned int id;
 };
 
+struct illumnode {
+	char *ipaddr, *hash;
+	long use_t;
+	int id;
+};
+
+struct illumserver {
+	pthread_t resv, send;
+	bool (*start)();
+};
+
 struct illumdb {
 	bool (*issetnode)(), (*newnode)(), (*setvar)(),
 		(*gettask)();
+	struct illumnode *(*nodelist)();
 	int (*newtask)(), (*nodenum)();
 	void (*getvar)();
 };

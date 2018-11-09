@@ -34,6 +34,7 @@ static FILE *error;
 /**
 *	Прототипы приватных функций.
 */
+static bool illum_routerdecode(json_object *, struct headers *);
 static void illum_routerstraight(json_object *, struct headers,
 	char *, char *);
 static void illum_routeronion(json_object *, struct headers,
@@ -46,11 +47,9 @@ static void illum_routerok(json_object *, struct headers,
 	char *, char *);
 static bool illum_routernewtask(enum illumheader, char *,
 	char *);
-static bool illum_routerdecode(json_object *,
-	struct headers *);
 static char *illum_routerheaders(enum illumheader, char *);
 static bool illum_routerread(char *, char *);
-static void illum_freepointer(void **, int);
+static void illum_freepointer(char **, int);
 static void *illum_routeprocessing(void *);
 static char **illum_routerexplode(char *);
 /**
@@ -95,14 +94,14 @@ static char **illum_routerexplode(char *content)
 		free(data);
 		return NULL;
 	}
-	data[0] = (char *)malloc(strlen(tok) + 1);
+	data[0] = (char *)malloc(strlen(tok) + 2);
 	memcpy(data[0], tok, strlen(tok) + 1);
 
 	if ((tok = strtok(NULL, "\r\n\r\n")) == NULL) {
 		data[1] = NULL;
 		return data;
 	}
-	data[1] = (char *)malloc(strlen(tok) + 1);
+	data[1] = (char *)malloc(strlen(tok) + 2);
 	memcpy(data[1], tok, strlen(tok) + 1);
 
 	tok = strtok(NULL, "\r\n\r\n");
@@ -140,8 +139,8 @@ static bool illum_routerread(char *data, char *ipaddr)
 	pthread_t thread;
 	char **args;
 
-	if (!data || !ipaddr || (arg2_len = strlen(data)) > MAXTEXTSIZE
-		|| (arg1_len = strlen(ipaddr)) > 100) {
+	if (!data || !ipaddr || (arg1_len = strlen(ipaddr)) > 100
+		|| (arg2_len = strlen(data)) > MAXTEXTSIZE) {
 		fprintf(error, "Error: Incorrect args in routerread.\n");
 		return false;
 	}
@@ -152,11 +151,8 @@ static bool illum_routerread(char *data, char *ipaddr)
 	}
 
 	args = (char **)malloc(sizeof(char *) * 2);
-	args[0] = (char *)malloc(arg1_len + 1);
-	args[1] = (char *)malloc(arg2_len + 1);
-
-	memcpy(args[0], ipaddr, arg1_len + 1);
-	memcpy(args[1], data, arg2_len + 1);
+	args[0] = ipaddr;
+	args[1] = data;
 	threads++;
 
 	if (pthread_create(&thread, NULL, illum_routeprocessing
@@ -165,10 +161,8 @@ static bool illum_routerread(char *data, char *ipaddr)
 	status = true;
 
 exit_read:
-	if (!status) {
-		illum_freepointer((void **)args, 2);
+	if (!status)
 		threads--;
-	}
 	return status;
 }
 /**
@@ -185,10 +179,17 @@ static void *illum_routeprocessing(void *args)
 		{OKREQUEST, illum_routerok},
 		{MONION, illum_routeronion}
 	};
-	char **argument = ((char **)args), **content;
-	unsigned int type = FUNCNULL;
+	char **buffer = (char **)args, **argument, **content;
+	unsigned int type = FUNCNULL, len = 0;
 	struct headers msg;
 	json_object *jobj;
+
+	argument = (char **)malloc(sizeof(char *) * 2);
+	for (int i = 0; i < 2; i++) {
+		argument[i] = (char *)malloc(len = (strlen(buffer[i]) + 1));
+		if (argument[i])
+			memcpy(argument[i], buffer[i], len);
+	}
 
 	if (!argument[0] || !argument[1]
 		|| !strstr(argument[1], "\r\n\r\n"))
@@ -212,9 +213,12 @@ static void *illum_routeprocessing(void *args)
 						content[1]);
 
 exit_processing:
-	illum_freepointer((void **)argument, 2);
+	illum_freepointer(argument, 2);
+	illum_freepointer(content, 2);
+
 	if (jobj && jobj != NULL)
 		json_object_put(jobj);
+	free(args);
 
 	threads--;
 	pthread_exit(0);
@@ -233,12 +237,12 @@ static bool illum_routerdecode(json_object *jobj,
 
 	if (!jobj || !msg) {
 		fprintf(error, "Error: Invalid args in decode.\n");
-		return status;
+		return false;
 	}
 
 	json_string = json_object_get_string;
 	msg->is_onion = false;
-	status = false
+	status = false;
 
 	json_object_object_foreach (jobj, key, value) {
 		if (strlen(key) < 2 || strlen(key) > 15)
@@ -287,6 +291,10 @@ static char *illum_routerheaders(enum illumheader type,
 	json_add(jobj, "ipaddr", json_object_new_string(ip));
 	json_add(jobj, "hash", json_object_new_string(hash));
 	json_add(jobj, "type", json_object_new_int(type));
+	if (type == MONION) {
+		// do something for onion message.
+	}
+
 	json = (char *)json_object_to_json_string(jobj);
 
 	if (jobj && jobj != NULL)
@@ -307,8 +315,8 @@ static char *illum_routerheaders(enum illumheader type,
 static void illum_routerstraight(json_object *jobj,
 	struct headers msg, char *ipaddr, char *data)
 {
-	if (!jobj || !ipaddr || !data) {
-		fprintf(error, "Error: Incorrect args in info.\n");
+	if (!jobj || !ipaddr) {
+		fprintf(error, "Error: Incorrect args in straight.\n");
 		return;
 	}
 }
@@ -324,10 +332,35 @@ static void illum_routerstraight(json_object *jobj,
 static void illum_routerinfo(json_object *jobj,
 	struct headers msg, char *ipaddr, char *data)
 {
-	if (!jobj || !ipaddr || !data) {
+	char *ip = ipaddr, *headers;
+	struct illumnode *nodes;
+	void (*json_add)();
+	int length;
+
+	if (!jobj || !ipaddr) {
 		fprintf(error, "Error: Incorrect args in info.\n");
 		return;
 	}
+
+	json_add = json_object_object_add;
+
+	if (!msg.ipaddr || strlen(msg.ipaddr) < 7)
+		json_add(jobj, "ipaddr", json_object_new_string(ip));
+	else
+		ip = msg.ipaddr;
+
+	headers = (char *)json_object_to_json_string(jobj);
+	nodes = p_db->nodelist(&length);
+	p_db->newnode(ip, msg.hash);
+
+	for (int i = 0; i < length; i++)
+		if (strcmp(nodes[i].ipaddr, ip) != 0) {
+			p_db->newtask(nodes[i].ipaddr, NULL, headers);
+			free(nodes[i].ipaddr);
+			free(nodes[i].hash);
+		}
+
+	free(nodes);
 }
 /**
 *	illum_routerfail - Функция создания нового маршрута
@@ -341,8 +374,8 @@ static void illum_routerinfo(json_object *jobj,
 static void illum_routerfail(json_object *jobj,
 	struct headers msg, char *ipaddr, char *data)
 {
-	if (!jobj || !ipaddr || !data) {
-		fprintf(error, "Error: Incorrect args in info.\n");
+	if (!jobj || !ipaddr) {
+		fprintf(error, "Error: Incorrect args in fail.\n");
 		return;
 	}
 }
@@ -358,8 +391,8 @@ static void illum_routerfail(json_object *jobj,
 static void illum_routerok(json_object *jobj,
 	struct headers msg, char *ipaddr, char *data)
 {
-	if (!jobj || !ipaddr || !data) {
-		fprintf(error, "Error: Incorrect args in info.\n");
+	if (!jobj || !ipaddr) {
+		fprintf(error, "Error: Incorrect args in ok.\n");
 		return;
 	}
 }
@@ -375,8 +408,8 @@ static void illum_routerok(json_object *jobj,
 static void illum_routeronion(json_object *jobj,
 	struct headers msg, char *ipaddr, char *data)
 {
-	if (!jobj || !ipaddr || !data) {
-		fprintf(error, "Error: Incorrect args in info.\n");
+	if (!jobj || !ipaddr) {
+		fprintf(error, "Error: Incorrect args in onion.\n");
 		return;
 	}
 }
@@ -387,12 +420,14 @@ static void illum_routeronion(json_object *jobj,
 *	@args - Указатель.
 *	@length - Длина массива.
 */
-static void illum_freepointer(void **pointer, int length)
+static void illum_freepointer(char **pointer, int length)
 {
 	if (!pointer || length < 1)
 		return;
 
 	for (int i = 0; i < length; i++)
-		free(pointer[i]);
-	free(pointer);
+		if (pointer[i] && pointer[i] != NULL)
+			free(pointer[i]);
+	if (pointer)
+		free(pointer);
 }
