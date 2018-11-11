@@ -139,6 +139,7 @@ static bool illum_dbgettask(struct illumtask *task)
 	bool status = false;
 	char *sql;
 
+	task->id = 0;
 	if (!task) {
 		fprintf(error, "Error: Incorrect arg in dbgettask.\n");
 		return false;
@@ -149,6 +150,7 @@ static bool illum_dbgettask(struct illumtask *task)
 	if (sqlite3_step(rs) != SQLITE_ROW)
 		goto exit_gettask;
 
+	task->type = atoi((const char *)sqlite3_column_text(rs, 4));
 	task->id = atoi((const char *)sqlite3_column_text(rs, 0));
 	task->headers = (char *)sqlite3_column_text(rs, 3);
 	task->ipaddr = (char *)sqlite3_column_text(rs, 1);
@@ -336,7 +338,8 @@ static bool illum_dbissettask(char *ipaddr, char *headers)
 *	@text - Текст сообщения.
 *	@headers - Заголовки к сообщению.
 */
-static int illum_dbsettask(char *ipaddr, char *text, char *headers)
+static int illum_dbsettask(char *ipaddr, char *text, char *headers,
+	int type)
 {
 	sqlite3_stmt *rs = NULL;
 	unsigned int length = 0;
@@ -344,7 +347,7 @@ static int illum_dbsettask(char *ipaddr, char *text, char *headers)
 	char *sql;
 
 	if (!ipaddr || strlen(ipaddr) < 7
-		|| !headers || strlen(headers) < 8) {
+		|| !headers || strlen(headers) < 8 || type < 0) {
 		fprintf(error, "Error: Incorrect args in settask.\n");
 		return id;
 	}
@@ -359,8 +362,9 @@ static int illum_dbsettask(char *ipaddr, char *text, char *headers)
 	}
 
 	sql = (char *)malloc(length + 100);
-	sprintf(sql, "INSERT INTO `tasks` VALUES (NULL, '%s', '%s', '%s');",
-		ipaddr, ((!text || text == NULL) ? "" : text), headers);
+	sprintf(sql, "INSERT INTO `tasks` VALUES (NULL, '%s', '%s', '%s',"
+		"'%d');", ipaddr, ((!text || text == NULL) ? "" : text), headers,
+		type);
 
 	sqlite3_prepare_v2(db, sql, -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
@@ -457,7 +461,8 @@ static bool illum_dbtables()
 
 	sqlite3_prepare_v2(db, "CREATE TABLE IF NOT EXISTS `tasks` ("
 	"`id` INTEGER PRIMARY KEY AUTOINCREMENT, `ip` text NOT NULL,"
-	"`text` text, `headers` text NOT NULL);", -1, &rs, NULL);
+	"`text` text, `headers` text NOT NULL, `type` int(3) NOT NULL);",
+	-1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_DONE) {
 		fprintf(error, "Error: Sqlite can't create tasks table.\n");
 		goto exit_tables;

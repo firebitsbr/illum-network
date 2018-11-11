@@ -10,9 +10,10 @@
 */
 static struct illumserver *p_server;
 static struct illumrouter *p_router;
+static struct illumnode *nodelist;
+static int mainsocket, nodelength;
 static struct timeval timeout;
 static struct illumdb *p_db;
-static int mainsocket;
 static FILE *error;
 /**
 *	Прототипы приватных функций.
@@ -38,6 +39,7 @@ bool illum_serverinit(struct illumserver *server,
 	}
 
 	mainsocket = socket(AF_INET, SOCK_DGRAM, 0);
+	nodelist = database->nodelist(&nodelength);
 	timeout.tv_sec = SERVER_TIMEOUT;
 	timeout.tv_usec = 0;
 	p_router = router;
@@ -45,6 +47,10 @@ bool illum_serverinit(struct illumserver *server,
 	error = errfile;
 	p_db = database;
 
+	if (mainsocket == 0) {
+		fprintf(error, "Error: Can't create socket.\n");
+		return false;
+	}
 	if (!(p_server->start = illum_serverstart)) {
 		fprintf(error, "Error: Can't create the pointer to "
 			"illum_serverstart.\n");
@@ -86,14 +92,20 @@ static bool illum_serverstart()
 */
 static void *illum_serverresv()
 {
-	char message[MAXTEXTSIZE], ipclient[100], *okresp, *failresp,
-		*response;
+	char message[MAXTEXTSIZE], ipclient[100], *okresp,
+		*failresp, *response;
 	struct sockaddr_in client, server;
 	socklen_t sendsize;
 	int length = 0;
 
 	failresp = p_router->headers(OKREQUEST, NULL);
 	okresp = p_router->headers(FAILREQUEST, NULL);
+
+	if (strlen(failresp) > 590 || strlen(okresp) > 590)
+		goto exit_resv;
+
+	strncat(failresp, "\r\n\r\n", 4);
+	strncat(okresp, "\r\n\r\n", 4);
 
 	sendsize = sizeof(struct sockaddr_in);
 	server.sin_addr.s_addr = INADDR_ANY;
@@ -106,11 +118,11 @@ static void *illum_serverresv()
 		memset(ipclient, '\0', 100);
 
 		bind(mainsocket, (struct sockaddr *)&server, sizeof(server));
-		length = recvfrom(mainsocket, message, MAXTEXTSIZE, MSG_DONTWAIT,
-						(struct sockaddr *)&client, &sendsize);
+		recvfrom(mainsocket, message, MAXTEXTSIZE,
+			MSG_WAITALL, (struct sockaddr *)&client, &sendsize);
 		inet_ntop(AF_INET, &client.sin_addr, ipclient, 100);
 
-		if (length < 0 || length > MAXTEXTSIZE)
+		if ((length = strlen(message)) < 10 || length > MAXTEXTSIZE)
 			continue;
 		if (SRVDEBUG)
 			printf("Received: %s from %s\n\n", message, ipclient);
@@ -118,10 +130,15 @@ static void *illum_serverresv()
 		if (p_router->read(ipclient, message))
 			response = okresp;
 
-		/*sendto(mainsocket, "234", 3, MSG_DONTWAIT,
-				(struct sockaddr *)&client, sizeof(client));*/
+		sendto(mainsocket, response, strlen(response), MSG_WAITALL,
+				(struct sockaddr *)&client, sizeof(client));
 	}
 
+exit_resv:
+	if (mainsocket > 0) {
+		shutdown(mainsocket, SHUT_RDWR);
+		close(mainsocket);
+	}
 	free(failresp);
 	free(okresp);
 	pthread_exit(0);
@@ -132,19 +149,76 @@ static void *illum_serverresv()
 */
 static void *illum_serversend()
 {
-	//struct sockaddr_in client;
-	//unsigned int length = 0;
-	char *message;
+	char *message, response[MAXTEXTSIZE], *tmpip;
+	struct sockaddr_in client;
+	struct illumtask task;
+	int length = 0, i = 0;
+	bool newnode;
 
-	//client.sin_port = htons(ILLUMPORT);
-	//client.sin_family = AF_INET;
+	client.sin_port = htons(ILLUMPORT);
+	client.sin_family = AF_INET;
 	message = (char *)malloc(1);
 
-	/*for (;;) {
+	for (;; p_db->gettask(&task), length = 0) {
+		if (task.id == 0)
+			continue;
 
-	}*/
-	sleep(10);
+		if (task.text && task.text != NULL)
+			length += strlen(task.text);
+		else
+			task.text = "\0";
+		length += strlen(task.headers);
 
+		message = (char *)realloc(message, length + 10);
+		sprintf(message, "%s\r\n\r\n%s", task.headers, task.text);
+		memset(client.sin_zero, '\0', sizeof(client.sin_zero));
+		memset(response, '\0', MAXTEXTSIZE);
+		newnode = false;
+
+		while (true) {
+			tmpip = nodelist[i].ipaddr;
+			if (task.ipaddr && strlen(task.ipaddr) > 7
+				&& !newnode)
+				tmpip = task.ipaddr;
+
+			client.sin_addr.s_addr = inet_addr(tmpip);
+			sendto(mainsocket, message, strlen(message),
+				MSG_WAITALL, (struct sockaddr *)&client,
+				sizeof(client));
+
+			if (SRVDEBUG)
+				printf("Sent: %s to %s\n\n", message, task.ipaddr);
+
+			if (task.type != (int)MONION)
+				break;
+
+			recvfrom(mainsocket, response, MAXTEXTSIZE,
+				MSG_WAITALL, (struct sockaddr *)&client, &sendsize);
+
+			if ((length = strlen(message)) < 10
+				|| length > MAXTEXTSIZE)
+				continue;
+
+			i += (newnode) ? 1 : 0;
+			newnode = true;
+		}
+/*
+		client.sin_addr.s_addr = inet_addr(task.ipaddr);
+
+		if (sendto(mainsocket, message, strlen(message),
+					MSG_WAITALL, (struct sockaddr *)&client,
+					sizeof(client)) < 0)
+			fprintf(error, "Error: Can't send message.\n");
+
+		if (SRVDEBUG)
+			printf("Sent: %s to %s\n\n", message, task.ipaddr);
+*/
+	}
+
+	if (mainsocket > 0) {
+		shutdown(mainsocket, SHUT_RDWR);
+		close(mainsocket);
+	}
 	free(message);
 	pthread_exit(0);
 }

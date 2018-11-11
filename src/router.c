@@ -121,7 +121,7 @@ static bool illum_routernewtask(enum illumheader type,
 	int status;
 
 	jsonheaders = illum_routerheaders(type, ipaddr);
-	status = p_db->newtask(ipaddr, text, jsonheaders);
+	status = p_db->newtask(ipaddr, text, jsonheaders, type);
 
 	return (status > -1) ? true : false;
 }
@@ -134,13 +134,13 @@ static bool illum_routernewtask(enum illumheader type,
 */
 static bool illum_routerread(char *data, char *ipaddr)
 {
-	int arg1_len, arg2_len;
+	int length = 0;
 	bool status = false;
 	pthread_t thread;
-	char **args;
+	char **args, *tmp;
 
-	if (!data || !ipaddr || (arg1_len = strlen(ipaddr)) > 100
-		|| (arg2_len = strlen(data)) > MAXTEXTSIZE) {
+	if (!data || !ipaddr || strlen(ipaddr) > 100
+		|| strlen(data) > MAXTEXTSIZE) {
 		fprintf(error, "Error: Incorrect args in routerread.\n");
 		return false;
 	}
@@ -151,8 +151,12 @@ static bool illum_routerread(char *data, char *ipaddr)
 	}
 
 	args = (char **)malloc(sizeof(char *) * 2);
-	args[0] = ipaddr;
-	args[1] = data;
+	for (int i = 0; i < 2; i++) {
+		tmp = (i == 0) ? ipaddr : data;
+		args[i] = (char *)malloc(sizeof(char) * 
+				(length = strlen(tmp) + 1));
+		memcpy(args[i], tmp, length);
+	}
 	threads++;
 
 	if (pthread_create(&thread, NULL, illum_routeprocessing
@@ -179,23 +183,16 @@ static void *illum_routeprocessing(void *args)
 		{OKREQUEST, illum_routerok},
 		{MONION, illum_routeronion}
 	};
-	char **buffer = (char **)args, **argument, **content;
-	unsigned int type = FUNCNULL, len = 0;
+	char **buffer = (char **)args, **content;
+	unsigned int type = FUNCNULL;
 	struct headers msg;
 	json_object *jobj;
 
-	argument = (char **)malloc(sizeof(char *) * 2);
-	for (int i = 0; i < 2; i++) {
-		argument[i] = (char *)malloc(len = (strlen(buffer[i]) + 1));
-		if (argument[i])
-			memcpy(argument[i], buffer[i], len);
-	}
-
-	if (!argument[0] || !argument[1]
-		|| !strstr(argument[1], "\r\n\r\n"))
+	if (!buffer[0] || !buffer[1]
+		|| !strstr(buffer[0], "\r\n\r\n"))
 		goto exit_processing;
 
-	content = illum_routerexplode(argument[1]);
+	content = illum_routerexplode(buffer[0]);
 	jobj = json_tokener_parse(content[0]);
 
 	if (!illum_routerdecode(jobj, &msg)) {
@@ -209,16 +206,15 @@ static void *illum_routeprocessing(void *args)
 			break;
 		}
 	if (type != FUNCNULL)
-		func[type].name(jobj, msg, argument[0],
+		func[type].name(jobj, msg, buffer[1],
 						content[1]);
 
 exit_processing:
-	illum_freepointer(argument, 2);
 	illum_freepointer(content, 2);
+	illum_freepointer(buffer, 2);
 
 	if (jobj && jobj != NULL)
 		json_object_put(jobj);
-	free(args);
 
 	threads--;
 	pthread_exit(0);
@@ -277,12 +273,13 @@ static bool illum_routerdecode(json_object *jobj,
 static char *illum_routerheaders(enum illumheader type,
 	char *ipaddr)
 {
-	char *json, *hash, *ip;
+	char *json, *hash, *ip, *tmp;
+	json_object *jobj = NULL;
 	void (*json_add)();
-	json_object *jobj;
 
 	ip = (ipaddr && ipaddr != NULL) ? ipaddr : "";
 	hash = (char *)malloc(121);
+	json = (char *)malloc(600);
 
 	json_add = json_object_object_add;
 	jobj = json_object_new_object();
@@ -295,7 +292,8 @@ static char *illum_routerheaders(enum illumheader type,
 		// do something for onion message.
 	}
 
-	json = (char *)json_object_to_json_string(jobj);
+	tmp = (char *)json_object_to_json_string(jobj);
+	memcpy(json, tmp, strlen(tmp) + 1);
 
 	if (jobj && jobj != NULL)
 		json_object_put(jobj);
@@ -343,7 +341,6 @@ static void illum_routerinfo(json_object *jobj,
 	}
 
 	json_add = json_object_object_add;
-
 	if (!msg.ipaddr || strlen(msg.ipaddr) < 7)
 		json_add(jobj, "ipaddr", json_object_new_string(ip));
 	else
@@ -355,7 +352,7 @@ static void illum_routerinfo(json_object *jobj,
 
 	for (int i = 0; i < length; i++)
 		if (strcmp(nodes[i].ipaddr, ip) != 0) {
-			p_db->newtask(nodes[i].ipaddr, NULL, headers);
+			p_db->newtask(nodes[i].ipaddr, NULL, headers, msg.type);
 			free(nodes[i].ipaddr);
 			free(nodes[i].hash);
 		}

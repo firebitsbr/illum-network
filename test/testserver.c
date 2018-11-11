@@ -7,6 +7,8 @@ int main()
 	struct illumdb database;
 	FILE *fp = fopen("./log.txt", "a+");
 
+	illum_dbinit(&database, "./illum.db", fp);
+	illum_routerinit(&router, &database, fp);
 	illum_serverinit(&server, &database, &router, fp);
 	server.start();
 

@@ -51,6 +51,7 @@ struct userkeys {
 struct illumtask {
 	char *ipaddr, *text, *headers;
 	unsigned int id;
+	int type;
 };
 
 struct illumnode {
