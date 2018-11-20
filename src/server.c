@@ -18,6 +18,8 @@ static FILE *error;
 /**
 *	Прототипы приватных функций.
 */
+static void illum_cyclesend(struct sockaddr_in *, char *, char *,
+	char *, int);
 static bool illum_serverstart();
 static void *illum_serverresv();
 static void *illum_serversend();
@@ -95,8 +97,8 @@ static void *illum_serverresv()
 	char message[MAXTEXTSIZE], ipclient[100], *okresp,
 		*failresp, *response;
 	struct sockaddr_in client, server;
-	socklen_t sendsize;
-	int length = 0;
+	socklen_t ssize;
+	int len = 0;
 
 	failresp = p_router->headers(OKREQUEST, NULL);
 	okresp = p_router->headers(FAILREQUEST, NULL);
@@ -107,31 +109,33 @@ static void *illum_serverresv()
 	strncat(failresp, "\r\n\r\n", 4);
 	strncat(okresp, "\r\n\r\n", 4);
 
-	sendsize = sizeof(struct sockaddr_in);
+	memset(server.sin_zero, '\0', sizeof(server.sin_zero));
+	ssize = sizeof(struct sockaddr_in);
 	server.sin_addr.s_addr = INADDR_ANY;
 	server.sin_port = htons(ILLUMPORT);
 	server.sin_family = AF_INET;
 
-	for (;; response = failresp, length = 0) {
-		memset(server.sin_zero, '\0', sizeof(server.sin_zero));
+	for (;; response = failresp, len = 0) {
 		memset(message, '\0', MAXTEXTSIZE);
 		memset(ipclient, '\0', 100);
 
 		bind(mainsocket, (struct sockaddr *)&server, sizeof(server));
 		recvfrom(mainsocket, message, MAXTEXTSIZE,
-			MSG_WAITALL, (struct sockaddr *)&client, &sendsize);
+			MSG_WAITALL, (struct sockaddr *)&client, &ssize);
 		inet_ntop(AF_INET, &client.sin_addr, ipclient, 100);
 
-		if ((length = strlen(message)) < 10 || length > MAXTEXTSIZE)
+		if ((len = strlen(message)) < 10 || len > MAXTEXTSIZE)
 			continue;
+
 		if (SRVDEBUG)
-			printf("Received: %s from %s\n\n", message, ipclient);
+			fprintf(error, "Received: %s from %s\n\n",
+				message, ipclient);
 
 		if (p_router->read(ipclient, message))
 			response = okresp;
 
 		sendto(mainsocket, response, strlen(response), MSG_WAITALL,
-				(struct sockaddr *)&client, sizeof(client));
+			(struct sockaddr *)&client, sizeof(client));
 	}
 
 exit_resv:
@@ -149,12 +153,12 @@ exit_resv:
 */
 static void *illum_serversend()
 {
-	char *message, response[MAXTEXTSIZE], *tmpip;
 	struct sockaddr_in client;
+	char *message, *response;
 	struct illumtask task;
-	int length = 0, i = 0;
-	bool newnode;
+	int length = 0;
 
+	response = (char *)malloc(MAXTEXTSIZE + 1);
 	client.sin_port = htons(ILLUMPORT);
 	client.sin_family = AF_INET;
 	message = (char *)malloc(1);
@@ -167,52 +171,16 @@ static void *illum_serversend()
 			length += strlen(task.text);
 		else
 			task.text = "\0";
-		length += strlen(task.headers);
 
+		length += strlen(task.headers);
 		message = (char *)realloc(message, length + 10);
+
 		sprintf(message, "%s\r\n\r\n%s", task.headers, task.text);
 		memset(client.sin_zero, '\0', sizeof(client.sin_zero));
 		memset(response, '\0', MAXTEXTSIZE);
-		newnode = false;
 
-		while (true) {
-			tmpip = nodelist[i].ipaddr;
-			if (task.ipaddr && strlen(task.ipaddr) > 7
-				&& !newnode)
-				tmpip = task.ipaddr;
-
-			client.sin_addr.s_addr = inet_addr(tmpip);
-			sendto(mainsocket, message, strlen(message),
-				MSG_WAITALL, (struct sockaddr *)&client,
-				sizeof(client));
-
-			if (SRVDEBUG)
-				printf("Sent: %s to %s\n\n", message, task.ipaddr);
-
-			if (task.type != (int)MONION)
-				break;
-
-			recvfrom(mainsocket, response, MAXTEXTSIZE,
-				MSG_WAITALL, (struct sockaddr *)&client, &sendsize);
-
-			if ((length = strlen(message)) < 10
-				|| length > MAXTEXTSIZE)
-				continue;
-
-			i += (newnode) ? 1 : 0;
-			newnode = true;
-		}
-/*
-		client.sin_addr.s_addr = inet_addr(task.ipaddr);
-
-		if (sendto(mainsocket, message, strlen(message),
-					MSG_WAITALL, (struct sockaddr *)&client,
-					sizeof(client)) < 0)
-			fprintf(error, "Error: Can't send message.\n");
-
-		if (SRVDEBUG)
-			printf("Sent: %s to %s\n\n", message, task.ipaddr);
-*/
+		illum_cyclesend(&client, message, response,
+			task.ipaddr, task.type);
 	}
 
 	if (mainsocket > 0) {
@@ -220,5 +188,50 @@ static void *illum_serversend()
 		close(mainsocket);
 	}
 	free(message);
+	free(response);
 	pthread_exit(0);
+}
+/**
+*	illum_serversend - Функция отправки сообщения.
+*
+*	@sockstr - Структура данных для отправки.
+*	@message - Сообщение.
+*	@response - Ответ.
+*	@ipaddr - Ip адрес клиента.
+*/
+static void illum_cyclesend(struct sockaddr_in *sockstr,
+	char *message, char *response, char *ipaddr, int type)
+{
+	struct sockaddr_in client = *sockstr;
+	char *tmpip = ipaddr;
+	socklen_t sendsize;
+	int len = 0;
+
+	if (!sockstr || !message || !response || !ipaddr) {
+		fprintf(error, "Error: Incorrect args in cyclesend.\n");
+		return;
+	}
+
+	sendsize = sizeof(struct sockaddr_in);
+
+	for (int i = -1; i < nodelength; i++) {
+		if (i != -1)
+			tmpip = nodelist[i].ipaddr;
+
+		client.sin_addr.s_addr = inet_addr(tmpip);
+		sendto(mainsocket, message, strlen(message),
+			MSG_WAITALL, (struct sockaddr *)&client,
+			sizeof(client));
+
+		if (SRVDEBUG)
+			fprintf(error, "Sent: %s to %s\n\n", message, tmpip);
+		if (type != (int)MONION)
+			break;
+
+		recvfrom(mainsocket, response, MAXTEXTSIZE,
+			MSG_WAITALL, (struct sockaddr *)&client, &sendsize);
+
+		if ((len = strlen(message)) < 10 || len > MAXTEXTSIZE)
+			continue;
+	}
 }

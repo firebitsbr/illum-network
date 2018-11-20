@@ -13,7 +13,7 @@ static FILE *error;
 /**
 *	Прототипы приватных функций.
 */
-static int illum_dbsettask(char *, char *, char *);
+static int illum_dbsettask(char *, char *, char *, int);
 static struct illumnode *illum_dballnodes(int *);
 static bool illum_dbgettask(struct illumtask *);
 static bool illum_dbissettask(char *, char *);
@@ -438,6 +438,9 @@ exit_setvar:
 static void illum_dbremovecache()
 {
 	sqlite3_stmt *rs = NULL;
+
+	if (DBDEBUG)
+		return;
 
 	sqlite3_prepare_v2(db, "DELETE FROM `onion`", -1,
 		&rs, NULL);
