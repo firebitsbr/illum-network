@@ -60,6 +60,12 @@ struct illumnode {
 	int id;
 };
 
+struct illummsg {
+	char *ipaddr, *hash, *text;
+	enum illumheader type;
+	struct illummsg *next;
+};
+
 struct illumserver {
 	pthread_t resv, send;
 	bool (*start)();
@@ -74,7 +80,7 @@ struct illumdb {
 };
 
 struct illumrouter {
-	bool (*newtask)(), (*read)();
+	bool (*newtask)(), (*read)(), (*is_ok)();
 	char *(*headers)();
 };
 
@@ -83,6 +89,8 @@ struct illumencrypt {
 		*(*encrypt)();
 	char *(*byte2hex)();
 };
+
+struct illummsg *msgbuffer;
 /**
 *	Прототипы доступных функций.
 */

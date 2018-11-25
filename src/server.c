@@ -224,14 +224,17 @@ static void illum_cyclesend(struct sockaddr_in *sockstr,
 			sizeof(client));
 
 		if (SRVDEBUG)
-			fprintf(error, "Sent: %s to %s\n\n", message, tmpip);
+			fprintf(error, "Sent: %s to %s\n\n", message,
+				tmpip);
 		if (type != (int)MONION)
 			break;
 
 		recvfrom(mainsocket, response, MAXTEXTSIZE,
-			MSG_WAITALL, (struct sockaddr *)&client, &sendsize);
+			MSG_WAITALL, (struct sockaddr *)&client,
+			&sendsize);
 
-		if ((len = strlen(message)) < 10 || len > MAXTEXTSIZE)
-			continue;
+		if ((len = strlen(message)) > 10 && len < MAXTEXTSIZE
+			&& p_router->is_ok(message))
+			break;
 	}
 }
