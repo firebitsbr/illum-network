@@ -73,13 +73,13 @@ static struct illumheaders *illum_hdedoce(unsigned char *headers)
 	size_t size = sizeof(struct illumheaders);
 	struct illumheaders *st_hdrs;
 
-	if (!headers || strlen(headers) < HEADERSIZE
-		|| strlen(header) > FULLSIZE)
-		return st_hdrs;
+	if (!headers || strlen((char *)headers) < HEADERSIZE
+		|| strlen((char *)headers) > FULLSIZE)
+		return NULL;
 
 	st_hdrs = (struct illumheaders *)malloc(size);
 	if (!st_hdrs)
-		return st_hdrs;
+		return NULL;
 
 	memcpy(st_hdrs->info, headers + HASHSIZE + 1, INFOSIZE);
 	memcpy(st_hdrs->hash, headers + 1, HASHSIZE);
