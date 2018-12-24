@@ -29,8 +29,8 @@
 #define TIMEOUT			6
 #define TEXTSIZE		9000
 #define HEADERSIZE		500
-#define FULLSIZE 		TEXTSIZE + HEADERSIZE
-#define THREADSLIMIT	0
+#define FULLSIZE		TEXTSIZE + HEADERSIZE
+#define THREADS			0
 #define TYPESHIFT		1
 #define HASHSIZE		32
 #define INFOSIZE		HEADERSIZE - HASHSIZE - 1
@@ -66,6 +66,7 @@ struct illumkeys {
 struct illumheaders {
 	unsigned char hash[HASHSIZE], info[INFOSIZE];
 	enum illumresponse type;
+	bool is_node;
 };
 
 struct illumipport {
@@ -114,6 +115,7 @@ bool illum_network(
 bool illum_router(
 	struct illumrouter *,
 	struct illumnetwork *,
+	struct illumencrypt *,
 	FILE *
 );
 

@@ -131,7 +131,7 @@ static bool illum_tables()
 	for (int i = 0; i < 2; i++) {
 		sqlite3_prepare_v2(db, query[i], -1, &rs, NULL);
 		if (sqlite3_step(rs) != SQLITE_DONE) {
-			fprintf(error, "Error: Create nodes table.\n");
+			fprintf(error, "Error: Can't create table.\n");
 			goto exit_tables;
 		}
 	}

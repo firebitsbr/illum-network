@@ -101,18 +101,23 @@ static unsigned char *illum_useract(struct illumipport ipport,
 	unsigned char *buffer)
 {
 	struct illumheaders *headers;
+	unsigned char *text;
 
-	if (!buffer || strlen((char *)buffer) > FULLSIZE) {
+	if (!buffer) {
 		fprintf(error, "Error: Invalid args of new user.\n");
 		return NULL;
 	}
-
 	illum_removeusers(users);
-	headers = p_router->h_decode(buffer);
+	headers = p_router->h_decode(buffer, ipport.port);
 
-	
-	//return p_router->responce(buffer, ipport);
-	return NULL;
+	if (!headers || headers == NULL) {
+		fprintf(error, "Error: Can't decode headers.\n");
+		return NULL;
+	}
+	text = p_router->responce(buffer, ipport);
+
+	free(headers);
+	return text;
 }
 /**
 *	illum_removeusers - Функция определения пользователей,

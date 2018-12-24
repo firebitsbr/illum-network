@@ -25,10 +25,10 @@ int main(int argc, char *args[])
 		return 1;
 	}
 	if (illum_encryptinit(&encrypt, &storage, stderr) == false) {
-		printf("Error: Can't init storage module.\n");
+		printf("Error: Can't init encrypt module.\n");
 		return 1;
 	}
-	if (illum_router(&router, &network, stderr) == false) {
+	if (illum_router(&router, &network, &encrypt, stderr) == false) {
 		printf("Error: Can't init router module.\n");
 		return 1;
 	}
