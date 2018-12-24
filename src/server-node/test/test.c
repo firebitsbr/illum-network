@@ -54,7 +54,7 @@ int main(int argc, char *args[])
 
 	b_headers = router.h_decode(headers, ipport.port);
 	resp = router.response(b_headers, ipport);
-	printf("Responce: %s\n", resp);
+	printf("Response: %s\n", resp);
 
 	return 0;
 }
