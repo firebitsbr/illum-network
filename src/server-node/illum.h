@@ -18,6 +18,7 @@
 #include <sodium.h>
 #include <fcntl.h>
 #include <time.h>
+#include <math.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
@@ -40,14 +41,14 @@
 */
 enum illumresponse {
 	/**
-	*	Клиентские типы сообщений
+	*	Клиентские типы сообщений.
 	*/
 	U_RESPONSE_DOS		= 0x00,
 	U_RESPONSE_NODES	= 0x02,
 	U_RESPONSE_PING		= 0x06,
 	U_RESPONSE_ONION	= 0x08,
 	/**
-	*	Серверные типы сообщений
+	*	Серверные типы сообщений.
 	*/
 	S_RESPONSE_DOS		= 0x10,
 	S_RESPONSE_NODES	= 0x12,
@@ -89,7 +90,7 @@ struct illumnetwork {
 struct illumrouter {
 	unsigned char template[HEADERSIZE];
 	struct illumheaders *(*h_decode)();
-	unsigned char *(*responce)();
+	unsigned char *(*response)();
 };
 
 struct illumencrypt {

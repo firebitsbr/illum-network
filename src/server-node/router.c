@@ -5,6 +5,7 @@
 *	@mrrva - 2018
 */
 #include "./illum.h"
+#define NODESLIM	12
 /**
 *	Структуры модуля.
 */
@@ -20,10 +21,11 @@ static FILE *error;
 /**
 *	Прототипы приватных функций.
 */
-static unsigned char *illum_responce(struct illumheaders *, struct illumipport);
+static unsigned char *illum_response(struct illumheaders *, struct illumipport);
 static unsigned char *illum_rserver(struct illumheaders *, struct illumipport *);
 static unsigned char *illum_rclient(struct illumheaders *, struct illumipport *);
-static struct illumheaders *illum_hdedoce(unsigned char *, int);
+static struct illumheaders *illum_hdecoce(unsigned char *);
+static void illum_nodelist(unsigned char *, char *);
 static void illum_printtemp();
 /**
 *	illum_router - Функция инициализации модуля
@@ -49,8 +51,8 @@ bool illum_router(struct illumrouter *router,
 	p_enc = encrypt;
 	error = fp;
 
-	router->responce = illum_responce;
-	router->h_decode = illum_hdedoce;
+	router->response = illum_response;
+	router->h_decode = illum_hdecoce;
 
 	memset(router->template, '\0', HEADERSIZE);
 	memcpy(router->template + 1, p_enc->keys->public,
@@ -62,25 +64,24 @@ bool illum_router(struct illumrouter *router,
 	return (routerinit = true);
 }
 /**
-*	illum_responce - Функция генерации ответа на
+*	illum_response - Функция генерации ответа на
 *	запрос устройства в сети.
 *
 *	@headers - Структура заголовков сообщения.
 *	@ipport - Структура Ip адреса и порта клиента.
 */
-static unsigned char *illum_responce(struct illumheaders *headers,
+static unsigned char *illum_response(struct illumheaders *headers,
 	struct illumipport ipport)
 {
-	unsigned char *responce;
+	unsigned char *response;
 
 	if (!headers || headers == NULL) {
-		fprintf(error, "Error: Invalid args in responce.\n");
+		fprintf(error, "Error: Invalid args in response.\n");
 		return NULL;
 	}
-
-	responce = (headers->is_node) ? illum_rserver(headers, &ipport)
+	response = (headers->is_node) ? illum_rserver(headers, &ipport)
 		: illum_rclient(headers, &ipport);
-	return responce;
+	return response;
 }
 /**
 *	illum_rserver - Функция генерации ответа на
@@ -92,13 +93,13 @@ static unsigned char *illum_responce(struct illumheaders *headers,
 static unsigned char *illum_rserver(struct illumheaders *headers,
 	struct illumipport *ipport)
 {
-	unsigned char *responce;
+	unsigned char *response;
+
+	if (!headers || !ipport)
+		return NULL;
+	response = (unsigned char *)malloc(HEADERSIZE);
 
 	switch (headers->type) {
-		case S_RESPONSE_DOS:
-		/* Неверные заголовочники - удалить из списка */
-			printf("1H.\n");
-			break;
 		case S_RESPONSE_NODES:
 			printf("2H.\n");
 			break;
@@ -118,11 +119,10 @@ static unsigned char *illum_rserver(struct illumheaders *headers,
 			printf("7H.\n");
 			break;
 		default:
-			p_router->template[0] = S_RESPONSE_DOS;
-			responce = (unsigned char *)malloc(HEADERSIZE);
-			memcpy(responce, p_router->template, HEADERSIZE);
+			memcpy(response, p_router->template, HEADERSIZE);
+			response[0] = S_RESPONSE_DOS;
 	}
-	return responce;
+	return response;
 }
 /**
 *	illum_rclient - Функция генерации ответа на
@@ -134,24 +134,47 @@ static unsigned char *illum_rserver(struct illumheaders *headers,
 static unsigned char *illum_rclient(struct illumheaders *headers,
 	struct illumipport *ipport)
 {
-	unsigned char *responce;
+	unsigned char *response;
+
+	if (!headers || !ipport)
+		return NULL;
+	response = (unsigned char *)malloc(HEADERSIZE);
 
 	switch (headers->type) {
 		case U_RESPONSE_NODES:
-			printf("2H.\n");
+			illum_nodelist(response, ipport->ip);
 			break;
 		case U_RESPONSE_PING:
-			printf("3H.\n");
+			memcpy(response, p_router->template, HEADERSIZE);
+			response[0] = U_RESPONSE_PING;
 			break;
 		case U_RESPONSE_ONION:
 			printf("4H.\n");
 			break;
 		default:
-			p_router->template[0] = U_RESPONSE_DOS;
-			responce = (unsigned char *)malloc(HEADERSIZE);
-			memcpy(responce, p_router->template, HEADERSIZE);
+			memcpy(response, p_router->template, HEADERSIZE);
+			response[0] = U_RESPONSE_DOS;
 	}
-	return responce;
+	return response;
+}
+/**
+*	illum_nodelist - Функция создания ответа на
+*	сообщение о запросе новых нод.
+*
+*	@response - Указатель на ответ клиенту.
+*	@ipaddr - Ip адрес устройства.
+*/
+static void illum_nodelist(unsigned char *response, char *ipaddr)
+{
+	unsigned char infoblicks[INFOSIZE];
+
+	if (!response || !ipaddr) {
+		fprintf(error, "Error: Invalid args in nodelist.\n");
+		free(response);
+		response = NULL;
+		return;
+	}
+	/* Запросы к бд */
 }
 /**
 *	illum_hdedoce - Функция декодирования заголовков
@@ -159,8 +182,7 @@ static unsigned char *illum_rclient(struct illumheaders *headers,
 *
 *	@headers - Байтовый массив сообщения.
 */
-static struct illumheaders *illum_hdedoce(unsigned char *headers,
-	int port)
+static struct illumheaders *illum_hdecoce(unsigned char *headers)
 {
 	size_t size = sizeof(struct illumheaders);
 	struct illumheaders *st_hdrs;
@@ -174,8 +196,9 @@ static struct illumheaders *illum_hdedoce(unsigned char *headers,
 
 	memcpy(st_hdrs->info, headers + HASHSIZE + 1, INFOSIZE);
 	memcpy(st_hdrs->hash, headers + 1, HASHSIZE);
-	st_hdrs->type = headers[0] << TYPESHIFT;
-	st_hdrs->is_node = (port == ILLUMPORT) ? true : false;
+	st_hdrs->type = (headers[0] == 0x00 || headers[0] == 0x10)
+		? headers[0] : headers[0] << TYPESHIFT;
+	st_hdrs->is_node = (headers[0] >= 0x10) ? true : false;
 
 	return st_hdrs;
 }
@@ -184,11 +207,11 @@ static struct illumheaders *illum_hdedoce(unsigned char *headers,
 *	для сообщений.
 *
 */
-static void illum_printtemp()
+static void illum_printtemp(void)
 {
 	printf("Message template: ");
 
 	for (int i = 0; i < HEADERSIZE; i++)
-		printf("0x%x ", p_router->template[i]);
+		printf("0x%02x  ", p_router->template[i]);
 	printf("\n");
 }

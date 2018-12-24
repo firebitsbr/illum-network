@@ -108,13 +108,13 @@ static unsigned char *illum_useract(struct illumipport ipport,
 		return NULL;
 	}
 	illum_removeusers(users);
-	headers = p_router->h_decode(buffer, ipport.port);
+	headers = p_router->h_decode(buffer);
 
 	if (!headers || headers == NULL) {
 		fprintf(error, "Error: Can't decode headers.\n");
 		return NULL;
 	}
-	text = p_router->responce(buffer, ipport);
+	text = p_router->response(buffer, ipport);
 
 	free(headers);
 	return text;
