@@ -18,6 +18,7 @@ struct thrarr {
 static struct sockaddr_in st_rcv, st_snd;
 static struct illumrouter *p_router;
 static struct illumnetwork *p_net;
+static pthread_mutex_t userdata;
 static struct illumusers *users;
 static bool networkinit = false;
 static struct timeval timeout;
@@ -26,6 +27,8 @@ static FILE *error;
 /**
 *	Прототипы приватных функций.
 */
+static void illum_register(struct illumusers *, unsigned char *,
+	struct illumipport ipport);
 static unsigned char *illum_useract(struct illumipport,
 	unsigned char *);
 static struct thrarr *illum_thrarray(void *, void *);
@@ -77,6 +80,8 @@ bool illum_network(struct illumnetwork *network,
 	setsockopt(msocket, sol, SO_RCVTIMEO, timeopt, opt);
 	setsockopt(msocket, sol, SO_SNDTIMEO, timeopt, opt);
 
+	pthread_mutex_init(&userdata, NULL);
+
 	if (pthread_create(&p_net->receiver, NULL, illum_receiver
 		, NULL) != 0) {
 		fprintf(fp, "Error: Can't start receive thread.\n");
@@ -107,17 +112,83 @@ static unsigned char *illum_useract(struct illumipport ipport,
 		fprintf(error, "Error: Invalid args of new user.\n");
 		return NULL;
 	}
-	illum_removeusers(users);
+	
 	headers = p_router->h_decode(buffer);
 
 	if (!headers || headers == NULL) {
 		fprintf(error, "Error: Can't decode headers.\n");
 		return NULL;
 	}
+
+	pthread_mutex_lock(&userdata);
+	illum_removeusers(users);
+	illum_register(users, headers->hash, ipport);
+	pthread_mutex_unlock(&userdata);
+
 	text = p_router->response(buffer, ipport);
 
 	free(headers);
 	return text;
+}
+/**
+*	illum_register - Функция регистрации нового/существующего
+*	подключившегося пользователя.
+*
+*	@list - Список пользователей сети.
+*	@hash - Хэш клиента.
+*	@ipport - Ip и порт нового клиента.
+*/
+static void illum_register(struct illumusers *list, 
+	unsigned char *hash, struct illumipport ipport)
+{
+	struct illumusers *tmp = list, *removenode;
+	size_t st_size = sizeof(struct illumusers);
+	struct illumipport *tmp_p;
+	bool exist = false;
+
+	if (!list || list == NULL || !hash || hash == NULL)
+		return;
+
+	while (tmp->next != NULL) {
+		tmp_p = &tmp->next->data;
+
+		if (sodium_memcmp(tmp->next->hash, hash, HASHSIZE) == 0) {
+			if (strcmp(tmp_p->ip, ipport.ip) == 0) {
+				tmp->next->ping = time(NULL);
+				exist = true;
+				continue;
+			}
+			removenode = tmp->next;
+			tmp->next = tmp->next->next;
+			free(removenode);
+		}
+		if (strcmp(tmp_p->ip, ipport.ip) == 0) {
+			removenode = tmp->next;
+			tmp->next = tmp->next->next;
+			free(removenode);
+		}
+
+		tmp = tmp->next;
+	}
+
+	if (sodium_memcmp(tmp->hash, hash, HASHSIZE) == 0) {
+		if (strcmp(tmp->data.ip, ipport.ip) == 0) {
+			tmp->ping = time(NULL);
+			exist = true;
+			return;
+		}
+		removenode = tmp->next;
+		tmp = tmp->next;
+		free(removenode);
+	}
+	if (exist == true)
+		return;
+
+	tmp = (struct illumusers *)malloc(st_size);
+	memcpy(tmp->hash, hash, HASHSIZE);
+	memcpy(&tmp->data, &ipport, sizeof(struct illumipport));
+	tmp->next = list;
+	list = tmp;
 }
 /**
 *	illum_removeusers - Функция определения пользователей,

@@ -76,7 +76,7 @@ struct illumipport {
 };
 
 struct illumusers {
-	unsigned char hash[32];
+	unsigned char hash[HASHSIZE];
 	struct illumipport data;
 	struct illumusers *next;
 	time_t ping;
@@ -101,8 +101,9 @@ struct illumencrypt {
 };
 
 struct illumdb {
-	char *(*get)();
-	void (*set)();
+	void (*set)(), (*deletenode)(), (*newnode)(),
+		(*nodelist)();
+	char *(*get)(), *(*findnode)();
 };
 /**
 *	Прототипы публичных функций.

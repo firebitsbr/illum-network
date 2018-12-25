@@ -24,7 +24,7 @@ static FILE *error;
 static unsigned char *illum_response(struct illumheaders *, struct illumipport);
 static unsigned char *illum_rserver(struct illumheaders *, struct illumipport *);
 static unsigned char *illum_rclient(struct illumheaders *, struct illumipport *);
-static struct illumheaders *illum_hdecoce(unsigned char *);
+static struct illumheaders *illum_hdecode(unsigned char *);
 static void illum_nodelist(unsigned char *, char *);
 static void illum_printtemp();
 /**
@@ -52,7 +52,7 @@ bool illum_router(struct illumrouter *router,
 	error = fp;
 
 	router->response = illum_response;
-	router->h_decode = illum_hdecoce;
+	router->h_decode = illum_hdecode;
 
 	memset(router->template, '\0', HEADERSIZE);
 	memcpy(router->template + 1, p_enc->keys->public,
@@ -170,7 +170,8 @@ static void illum_nodelist(unsigned char *response, char *ipaddr)
 
 	if (!response || !ipaddr) {
 		fprintf(error, "Error: Invalid args in nodelist.\n");
-		free(response);
+		if (response && response != NULL)
+			free(response);
 		response = NULL;
 		return;
 	}
@@ -182,7 +183,7 @@ static void illum_nodelist(unsigned char *response, char *ipaddr)
 *
 *	@headers - Байтовый массив сообщения.
 */
-static struct illumheaders *illum_hdecoce(unsigned char *headers)
+static struct illumheaders *illum_hdecode(unsigned char *headers)
 {
 	size_t size = sizeof(struct illumheaders);
 	struct illumheaders *st_hdrs;
