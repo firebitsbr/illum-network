@@ -4,7 +4,7 @@
 *
 *	@mrrva - 2018
 */
-#include "../illum.h"
+#include "../include/illum.h"
 
 int main(int argc, char *args[])
 {

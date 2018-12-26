@@ -1,17 +1,11 @@
 /**
-*	network.c - Функции модуля network 
-*	децентрализованной сети illum.
+*	network_main.c - Функции модуля network 
+*	децентрализованной сети illum отвечающие
+*	за работу приложения с сетью.
 *
 *	@mrrva - 2018
 */
-#include "./illum.h"
-/**
-*	Структуры модуля.
-*/
-struct thrarr {
-	unsigned char buffer[FULLSIZE + 1];
-	struct sockaddr_in client;
-};
+#include "include/network.h"
 /**
 *	Приватные переменные и указатели.
 */
@@ -19,24 +13,8 @@ static struct sockaddr_in st_rcv, st_snd;
 static struct illumrouter *p_router;
 static struct illumnetwork *p_net;
 static pthread_mutex_t userdata;
-static struct illumusers *users;
-static bool networkinit = false;
 static struct timeval timeout;
 static int msocket;
-static FILE *error;
-/**
-*	Прототипы приватных функций.
-*/
-static void illum_register(struct illumusers *, unsigned char *,
-	struct illumipport ipport);
-static unsigned char *illum_useract(struct illumipport,
-	unsigned char *);
-static struct thrarr *illum_thrarray(void *, void *);
-static void illum_removeusers(struct illumusers *);
-//static bool illum_action(enum illumtypes, char *);
-static void *illum_replayto(void *);
-static void *illum_receiver();
-static void *illum_sender();
 /**
 *	illum_network - Функция инициализации модуля
 *	пересылки сообщениями.
@@ -102,7 +80,7 @@ bool illum_network(struct illumnetwork *network,
 *	@ipport - Ip и порт нового клиента.
 *	@buffer - Сообщение клиента.
 */
-static unsigned char *illum_useract(struct illumipport ipport,
+unsigned char *illum_useract(struct illumipport ipport,
 	unsigned char *buffer)
 {
 	struct illumheaders *headers;
@@ -125,99 +103,10 @@ static unsigned char *illum_useract(struct illumipport ipport,
 	illum_register(users, headers->hash, ipport);
 	pthread_mutex_unlock(&userdata);
 
-	text = p_router->response(buffer, ipport);
+	text = p_router->response(headers, ipport);
 
 	free(headers);
 	return text;
-}
-/**
-*	illum_register - Функция регистрации нового/существующего
-*	подключившегося пользователя.
-*
-*	@list - Список пользователей сети.
-*	@hash - Хэш клиента.
-*	@ipport - Ip и порт нового клиента.
-*/
-static void illum_register(struct illumusers *list, 
-	unsigned char *hash, struct illumipport ipport)
-{
-	struct illumusers *tmp = list, *removenode;
-	size_t st_size = sizeof(struct illumusers);
-	struct illumipport *tmp_p;
-	bool exist = false;
-
-	if (!list || list == NULL || !hash || hash == NULL)
-		return;
-
-	while (tmp->next != NULL) {
-		tmp_p = &tmp->next->data;
-
-		if (sodium_memcmp(tmp->next->hash, hash, HASHSIZE) == 0) {
-			if (strcmp(tmp_p->ip, ipport.ip) == 0) {
-				tmp->next->ping = time(NULL);
-				exist = true;
-				continue;
-			}
-			removenode = tmp->next;
-			tmp->next = tmp->next->next;
-			free(removenode);
-		}
-		if (strcmp(tmp_p->ip, ipport.ip) == 0) {
-			removenode = tmp->next;
-			tmp->next = tmp->next->next;
-			free(removenode);
-		}
-
-		tmp = tmp->next;
-	}
-
-	if (sodium_memcmp(tmp->hash, hash, HASHSIZE) == 0) {
-		if (strcmp(tmp->data.ip, ipport.ip) == 0) {
-			tmp->ping = time(NULL);
-			exist = true;
-			return;
-		}
-		removenode = tmp->next;
-		tmp = tmp->next;
-		free(removenode);
-	}
-	if (exist == true)
-		return;
-
-	tmp = (struct illumusers *)malloc(st_size);
-	memcpy(tmp->hash, hash, HASHSIZE);
-	memcpy(&tmp->data, &ipport, sizeof(struct illumipport));
-	tmp->next = list;
-	list = tmp;
-}
-/**
-*	illum_removeusers - Функция определения пользователей,
-*	которые подключены к ноде.
-*
-*	@list - Список пользователей сети.
-*/
-static void illum_removeusers(struct illumusers *list)
-{
-	struct illumusers *tmp = list, *removenode;
-	time_t c_time = time(NULL);
-
-	if (!list || list == NULL)
-		return;
-
-	while (tmp->next != NULL) {
-		if (c_time - tmp->next->ping >= TIMEOUT) {
-			removenode = tmp->next;
-			tmp->next = tmp->next->next;
-			free(removenode);
-		}
-		tmp = tmp->next;
-	}
-
-	if (c_time - list->ping >= TIMEOUT) {
-		removenode = list;
-		list = list->next;
-		free(removenode);
-	}
 }
 /**
 *	illum_replayto - Функция создания ответа подключенному
@@ -225,7 +114,7 @@ static void illum_removeusers(struct illumusers *list)
 *
 *	@arguments - Структура параметров потока.
 */
-static void *illum_replayto(void *arguments)
+void *illum_replayto(void *arguments)
 {
 	struct thrarr *args = (struct thrarr *)arguments;
 	struct illumipport ipport;
@@ -260,7 +149,7 @@ exit_replayto:
 *	@var1 - Структура клиента.
 *	@var2 - Буффер данных.
 */
-static struct thrarr *illum_thrarray(void *var1, void *var2)
+struct thrarr *illum_thrarray(void *var1, void *var2)
 {
 	struct thrarr *array = NULL;
 
@@ -282,7 +171,7 @@ static struct thrarr *illum_thrarray(void *var1, void *var2)
 *	клиентов сети и их обработка.
 *
 */
-static void *illum_receiver(void)
+void *illum_receiver(void)
 {
 	socklen_t ln = sizeof(struct sockaddr_in);
 	unsigned char buff[FULLSIZE + 1];
@@ -316,7 +205,7 @@ static void *illum_receiver(void)
 *	клиентам данной ноды.
 *
 */
-static void *illum_sender(void)
+void *illum_sender(void)
 {
 	pthread_exit(0);
 /*

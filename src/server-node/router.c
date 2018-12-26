@@ -4,7 +4,7 @@
 *
 *	@mrrva - 2018
 */
-#include "./illum.h"
+#include "./include/illum.h"
 #define NODESLIM	12
 /**
 *	Структуры модуля.
