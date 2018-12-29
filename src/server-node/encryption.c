@@ -14,11 +14,11 @@ static FILE *error;
 /**
 *	Прототипы приватных функций.
 */
-static unsigned char *illum_encrypt(unsigned char *, char *);
-static unsigned char *illum_decrypt(unsigned char *);
-static char *illum_byte2hex(unsigned char *, int);
-static unsigned char *illum_hex2byte(char *);
-static void illum_genkeys(struct illumkeys *);
+unsigned char *illum_encrypt(unsigned char *, char *);
+unsigned char *illum_decrypt(unsigned char *);
+char *illum_byte2hex(unsigned char *, int);
+unsigned char *illum_hex2byte(char *);
+void illum_genkeys(struct illumkeys *);
 /**
 *	illum_encrypt - Функция инициализации модуля
 *	шифрации.
@@ -51,7 +51,7 @@ bool illum_encryptinit(struct illumencrypt *encrypt,
 *
 *	@keys - Структура хранения ключей.
 */
-static void illum_genkeys(struct illumkeys *keys)
+void illum_genkeys(struct illumkeys *keys)
 {
 	unsigned char *b_public = NULL, *b_secret = NULL;
 	char *public, *secret;
@@ -98,7 +98,7 @@ exit_genkeys:
 *	@bytes - Запись для перевода в hex.
 *	@len - Длина записи.
 */
-static char *illum_byte2hex(unsigned char *bytes, int len)
+char *illum_byte2hex(unsigned char *bytes, int len)
 {
 	char *hex;
 
@@ -118,13 +118,12 @@ static char *illum_byte2hex(unsigned char *bytes, int len)
 *
 *	@string - Hex строка.
 */
-static unsigned char *illum_hex2byte(char *string)
+unsigned char *illum_hex2byte(char *string)
 {
 	unsigned int len, slen;
 	unsigned char *data;
 
-	if (!string || string == NULL
-		|| (slen = strlen(string)) % 2 != 0)
+	if (!string || (slen = strlen(string)) % 2 != 0)
 		return NULL;
 
 	len = slen / 2 + 1;
@@ -138,7 +137,7 @@ static unsigned char *illum_hex2byte(char *string)
 *
 *	@text - Шифрованная байт-строка.
 */
-static unsigned char *illum_decrypt(unsigned char *text)
+unsigned char *illum_decrypt(unsigned char *text)
 {
 	unsigned char *buffer = NULL;
 	unsigned int len;
@@ -166,7 +165,7 @@ static unsigned char *illum_decrypt(unsigned char *text)
 *	@text - Строка кодирования.
 *	@pkey - Публичный ключ.
 */
-static unsigned char *illum_encrypt(unsigned char *text,
+unsigned char *illum_encrypt(unsigned char *text,
 	char *pkey)
 {
 	unsigned char *buffer = NULL, *phex;

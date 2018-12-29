@@ -82,6 +82,13 @@ struct illumusers {
 	time_t ping;
 };
 
+struct illumnodes {
+	unsigned char hash[HASHSIZE];
+	struct illumnodes *next;
+	unsigned long use_t;
+	char ip[20];
+};
+
 struct illumnetwork {
 	bool (*action)(), exit_server;
 	pthread_t receiver, sender;
@@ -101,9 +108,10 @@ struct illumencrypt {
 };
 
 struct illumdb {
-	void (*set)(), (*deletenode)(), (*newnode)(),
-		(*nodelist)();
+	void (*set)(), (*deletenode)(), (*nodelist)(),
+		(*freenode)(), (*setlists)();
 	char *(*get)(), *(*findnode)();
+	bool (*newnode)();
 };
 /**
 *	Прототипы публичных функций.
@@ -123,6 +131,7 @@ bool illum_router(
 
 bool illum_database(
 	struct illumdb *,
+	struct illumencrypt *,
 	char *,
 	FILE *
 );

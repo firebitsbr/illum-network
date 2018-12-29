@@ -1,32 +1,22 @@
 /**
-*	storage.c - Функции модуля storage 
+*	storage_main.c - Функции модуля storage 
 *	децентрализованной сети illum отвечающие
 *	за работу приложения с основными функциями.
 *
 *	@mrrva - 2018
 */
-#include "./include/illum.h"
-/**
-*	Приватные переменные и указатели.
-*/
-static bool storageinit = false;
-static sqlite3 *db;
-static FILE *error;
-/**
-*	Прототипы приватных функций.
-*/
-static void illum_setvar(char *, char *);
-static char *illum_getvar(char *);
-static bool illum_tables();
+#include "include/storage.h"
 /**
 *	illum_database - Функция инициализации подключения
 *	к базе данных с поледующим создание структуры.
 *
 *	@database - Главная управляющая структура.
+*	@encrypt - Структура модуля шифрации.
 *	@filepath - Путь к базе данных.
 *	@fp - Файловый стрим для записи ошибок.
 */
-bool illum_database(struct illumdb *database, char *filepath,
+bool illum_database(struct illumdb *database, 
+	struct illumencrypt *encrypt, char *filepath,
 	FILE *fp)
 {
 	if (!filepath || strlen(filepath) < 8 || !database
@@ -40,8 +30,13 @@ bool illum_database(struct illumdb *database, char *filepath,
 		return false;
 	}
 
+	database->setlists = illum_setlists;
+	database->freenode = illum_freenode;
+	database->newnode = illum_newnode;
 	database->get = illum_getvar;
 	database->set = illum_setvar;
+	p_enc = encrypt;
+	nodes = NULL;
 
 	return (storageinit = true);
 }
@@ -52,7 +47,7 @@ bool illum_database(struct illumdb *database, char *filepath,
 *	@key - Имя параметра.
 *	@value - Значение параметра.
 */
-static void illum_setvar(char *key, char *value)
+void illum_setvar(char *key, char *value)
 {
 	sqlite3_stmt *rs = NULL;
 	char *query;
@@ -64,13 +59,13 @@ static void illum_setvar(char *key, char *value)
 	}
 
 	asprintf(&query, "DELETE FROM `settings` WHERE "
-		"`name`='%s'", key);
+		"`name`='%s';", key);
 	sqlite3_prepare_v2(db, query, -1, &rs, NULL);
 	sqlite3_step(rs);
 	free(query);
 
 	asprintf(&query, "INSERT INTO `settings` VALUES "
-		"('%s', '%s')", key, value);
+		"('%s', '%s');", key, value);
 	sqlite3_prepare_v2(db, query, -1, &rs, NULL);
 	sqlite3_step(rs);
 	free(query);
@@ -84,7 +79,7 @@ static void illum_setvar(char *key, char *value)
 *
 *	@key - Имя параметра.
 */
-static char *illum_getvar(char *key)
+char *illum_getvar(char *key)
 {
 	char *query, *data = NULL;
 	sqlite3_stmt *rs = NULL;
@@ -95,7 +90,7 @@ static char *illum_getvar(char *key)
 	}
 
 	asprintf(&query, "SELECT * FROM `settings` WHERE "
-		"`name`='%s'", key);
+		"`name`='%s';", key);
 	sqlite3_prepare_v2(db, query, -1, &rs, NULL);
 	if (sqlite3_step(rs) != SQLITE_ROW)
 		goto exit_getvar;
@@ -110,10 +105,21 @@ exit_getvar:
 	return data;
 }
 /**
+*	illum_setlists - Функция заполнения всех списков.
+*
+*/
+void illum_setlists()
+{
+	illum_nodeselect();
+#ifdef DEBUG
+	illum_printnodes();
+#endif
+}
+/**
 *	illum_tables - Функция создания базы данных проекта.
 *
 */
-static bool illum_tables()
+bool illum_tables()
 {
 	const char *query[] = {
 		"CREATE TABLE IF NOT EXISTS " \

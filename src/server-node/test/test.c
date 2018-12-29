@@ -26,7 +26,7 @@ int main(int argc, char *args[])
 	*	Инициализируем управляющие структуры и 
 	*	запускаем потоки приема и отправки.
 	*/
-	if (illum_database(&storage, path, stderr) == false) {
+	if (illum_database(&storage, &encrypt, path, stderr) == false) {
 		printf("Error: Can't init storage module.\n");
 		return 1;
 	}
@@ -42,6 +42,11 @@ int main(int argc, char *args[])
 		printf("Error: Can't init network module.\n");
 		return 1;
 	}
+	/**
+	*	Запуск функций необходимых для инициализации
+	*	модулей.
+	*/
+	storage.setlists();
 	/**
 	*	Декодирование тестовых заголовков и тест
 	*	функции генерации ответа.
