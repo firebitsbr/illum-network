@@ -14,6 +14,7 @@
 */
 struct illumencrypt *p_enc;
 struct illumnodes *nodes;
+struct illumtasks *tasks;
 bool storageinit;
 sqlite3 *db;
 FILE *error;
@@ -25,8 +26,6 @@ bool illum_nodeinsert_list(
 );
 
 void illum_freenode(
-	struct illumnodes *, 
-	bool
 );
 
 void illum_setvar(
@@ -46,6 +45,16 @@ bool illum_newnode(
 	struct illumnodes *
 );
 
+bool illum_newtask(
+	struct illumtasks *
+);
+
+struct illumnodes *illum_getnodes(
+);
+
+struct illumtasks *illum_gettasks(
+);
+
 void illum_nodeselect(
 );
 
@@ -56,6 +65,12 @@ void illum_printnodes(
 );
 
 void illum_setlists(
+);
+
+void illum_printtasks(
+);
+
+void illum_removetask(
 );
 
 #endif

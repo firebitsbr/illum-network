@@ -30,12 +30,20 @@ bool illum_database(struct illumdb *database,
 		return false;
 	}
 
+#ifdef DEBUG
+	database->printtasks = illum_printtasks;
+#endif
+	database->removetask = illum_removetask;
 	database->setlists = illum_setlists;
 	database->freenode = illum_freenode;
+	database->p_nodes = illum_getnodes;
+	database->p_tasks = illum_gettasks;
+	database->newtask = illum_newtask;
 	database->newnode = illum_newnode;
 	database->get = illum_getvar;
 	database->set = illum_setvar;
 	p_enc = encrypt;
+	tasks = NULL;
 	nodes = NULL;
 
 	return (storageinit = true);

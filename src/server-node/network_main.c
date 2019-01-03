@@ -102,7 +102,6 @@ unsigned char *illum_useract(struct illumipport ipport,
 	illum_removeusers(users);
 	illum_register(users, headers->hash, ipport);
 	pthread_mutex_unlock(&userdata);
-
 	text = p_router->response(headers, ipport);
 
 	free(headers);
@@ -207,15 +206,7 @@ void *illum_receiver(void)
 */
 void *illum_sender(void)
 {
-	pthread_exit(0);
-/*
-exit_sender:
-	p_net->exit_server = true;
+	
 
-	if (msocket != 0) {
-		shutdown(msocket, SHUT_RDWR);
-		close(msocket);
-	}
 	pthread_exit(0);
-*/
 }

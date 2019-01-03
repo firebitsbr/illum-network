@@ -61,7 +61,7 @@ void illum_register(struct illumusers *list,
 			tmp->ping = time(NULL);
 			return;
 		}
-		removenode = tmp->next;
+		removenode = tmp;
 		tmp = tmp->next;
 		free(removenode);
 	}
@@ -91,12 +91,12 @@ void illum_adduser(struct illumusers *list,
 	tmp->next = list;
 	list = tmp;
 
-	memcpy(&tmp->data, &ipport, s_size);
-	memcpy(tmp->hash, hash, HASHSIZE);
+	memcpy(&list->data, &ipport, s_size);
+	memcpy(list->hash, hash, HASHSIZE);
 }
 /**
 *	illum_removeusers - Функция определения пользователей,
-*	которые подключены к ноде.
+*	которые отключены от ноды.
 *
 *	@list - Список пользователей сети.
 */

@@ -4,29 +4,7 @@
 *
 *	@mrrva - 2018
 */
-#include "./include/illum.h"
-#define NODESLIM	12
-/**
-*	Структуры модуля.
-*/
-
-/**
-*	Приватные переменные и указатели.
-*/
-static struct illumencrypt *p_enc;
-static struct illumrouter *p_router;
-static struct illumnetwork *p_net;
-static bool routerinit = false;
-static FILE *error;
-/**
-*	Прототипы приватных функций.
-*/
-static unsigned char *illum_response(struct illumheaders *, struct illumipport);
-static unsigned char *illum_rserver(struct illumheaders *, struct illumipport *);
-static unsigned char *illum_rclient(struct illumheaders *, struct illumipport *);
-static struct illumheaders *illum_hdecode(unsigned char *);
-static void illum_nodelist(unsigned char *, char *);
-static void illum_printtemp();
+#include "./include/router.h"
 /**
 *	illum_router - Функция инициализации модуля
 *	маршрутизации сети.
@@ -38,10 +16,11 @@ static void illum_printtemp();
 bool illum_router(struct illumrouter *router,
 	struct illumnetwork *network,
 	struct illumencrypt *encrypt,
+	struct illumdb *database,
 	FILE *fp)
 {
 	if (routerinit || !router || !network || !fp
-		|| !encrypt) {
+		|| !encrypt || !database) {
 		fprintf(fp, "Error: Incorrect args int router.\n");
 		return false;
 	}
@@ -49,6 +28,7 @@ bool illum_router(struct illumrouter *router,
 	p_router = router;
 	p_net = network;
 	p_enc = encrypt;
+	p_db = database;
 	error = fp;
 
 	router->response = illum_response;
@@ -70,7 +50,7 @@ bool illum_router(struct illumrouter *router,
 *	@headers - Структура заголовков сообщения.
 *	@ipport - Структура Ip адреса и порта клиента.
 */
-static unsigned char *illum_response(struct illumheaders *headers,
+unsigned char *illum_response(struct illumheaders *headers,
 	struct illumipport ipport)
 {
 	unsigned char *response;
@@ -90,13 +70,14 @@ static unsigned char *illum_response(struct illumheaders *headers,
 *	@headers - Структура заголовков сообщения.
 *	@ipport - Структура Ip адреса и порта клиента.
 */
-static unsigned char *illum_rserver(struct illumheaders *headers,
+unsigned char *illum_rserver(struct illumheaders *headers,
 	struct illumipport *ipport)
 {
 	unsigned char *response;
 
 	if (!headers || !ipport)
 		return NULL;
+
 	response = (unsigned char *)malloc(HEADERSIZE);
 
 	switch (headers->type) {
@@ -131,13 +112,14 @@ static unsigned char *illum_rserver(struct illumheaders *headers,
 *	@headers - Структура заголовков сообщения.
 *	@ipport - Структура Ip адреса и порта клиента.
 */
-static unsigned char *illum_rclient(struct illumheaders *headers,
+unsigned char *illum_rclient(struct illumheaders *headers,
 	struct illumipport *ipport)
 {
 	unsigned char *response;
 
 	if (!headers || !ipport)
 		return NULL;
+
 	response = (unsigned char *)malloc(HEADERSIZE);
 
 	switch (headers->type) {
@@ -164,18 +146,66 @@ static unsigned char *illum_rclient(struct illumheaders *headers,
 *	@response - Указатель на ответ клиенту.
 *	@ipaddr - Ip адрес устройства.
 */
-static void illum_nodelist(unsigned char *response, char *ipaddr)
+void illum_nodelist(unsigned char *response, char *ipaddr)
 {
-	unsigned char infoblicks[INFOSIZE];
+	size_t size = 1 + HASHSIZE;
+	struct illumnodes *nodes;
+	unsigned char *b_ipaddr;
+	int len = 0;
 
 	if (!response || !ipaddr) {
-		fprintf(error, "Error: Invalid args in nodelist.\n");
+		fprintf(error, "Error: Invalid args in nodel"
+			"ist.\n");
 		if (response && response != NULL)
 			free(response);
 		response = NULL;
 		return;
 	}
-	/* Запросы к бд */
+
+	memcpy(response, p_router->template, HEADERSIZE);
+	response[0] = U_RESPONSE_NODES;
+	nodes = p_db->p_nodes();
+
+	if (nodes == NULL) {
+		response[0] = U_RESPONSE_DOS;
+		return;
+	}
+	while (len++, nodes != NULL && len <= NODESLIM) {
+		b_ipaddr = illum_ip2bytes(nodes->ip);
+
+		if (b_ipaddr == NULL) {
+			nodes = nodes->next;
+			continue;
+		}
+		memcpy(response + size + 4, nodes->hash, 32);
+		memcpy(response + size, b_ipaddr, 4);
+
+		nodes = nodes->next;
+		size += 4 + HASHSIZE;
+		free(b_ipaddr);
+	}
+}
+/**
+*	illum_ip2bytes - Функция перевода строки ip
+*	адреса в байтовый массив.
+*
+*	@ipaddr - Ip адрес.
+*/
+unsigned char *illum_ip2bytes(char *ipaddr)
+{
+	unsigned char *bytes;
+	int dt[4];
+
+	if (!ipaddr || ipaddr == NULL || !strstr(ipaddr, "."))
+		return NULL;
+	bytes = (unsigned char *)malloc(4);
+
+	sscanf(ipaddr, "%d.%d.%d.%d", &dt[0], &dt[1],
+		&dt[2], &dt[3]);
+	for (int i = 0; i < 4; i++)
+		bytes[i] = dt[i];
+
+	return bytes;
 }
 /**
 *	illum_hdedoce - Функция декодирования заголовков
@@ -183,7 +213,7 @@ static void illum_nodelist(unsigned char *response, char *ipaddr)
 *
 *	@headers - Байтовый массив сообщения.
 */
-static struct illumheaders *illum_hdecode(unsigned char *headers)
+struct illumheaders *illum_hdecode(unsigned char *headers)
 {
 	size_t size = sizeof(struct illumheaders);
 	struct illumheaders *st_hdrs;
@@ -208,7 +238,7 @@ static struct illumheaders *illum_hdecode(unsigned char *headers)
 *	для сообщений.
 *
 */
-static void illum_printtemp(void)
+void illum_printtemp(void)
 {
 	printf("Message template: ");
 

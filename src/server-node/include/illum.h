@@ -30,10 +30,10 @@
 #define TIMEOUT			6
 #define TEXTSIZE		9000
 #define HEADERSIZE		500
-#define FULLSIZE		TEXTSIZE + HEADERSIZE
 #define THREADS			0
 #define TYPESHIFT		1
 #define HASHSIZE		32
+#define FULLSIZE		TEXTSIZE + HEADERSIZE
 #define INFOSIZE		HEADERSIZE - HASHSIZE - 1
 #define DEBUG			1
 /**
@@ -89,6 +89,12 @@ struct illumnodes {
 	char ip[20];
 };
 
+struct illumtasks {
+	unsigned char text[FULLSIZE];
+	struct illumtasks *next;
+	char ip[20];
+};
+
 struct illumnetwork {
 	bool (*action)(), exit_server;
 	pthread_t receiver, sender;
@@ -109,9 +115,12 @@ struct illumencrypt {
 
 struct illumdb {
 	void (*set)(), (*deletenode)(), (*nodelist)(),
-		(*freenode)(), (*setlists)();
+		(*freenode)(), (*printtasks)(),
+		(*setlists)(), (*removetask)();
 	char *(*get)(), *(*findnode)();
-	bool (*newnode)();
+	struct illumtasks *(*p_tasks)();
+	struct illumnodes *(*p_nodes)();
+	bool (*newnode)(), (*newtask)();
 };
 /**
 *	Прототипы публичных функций.
@@ -126,6 +135,7 @@ bool illum_router(
 	struct illumrouter *,
 	struct illumnetwork *,
 	struct illumencrypt *,
+	struct illumdb *,
 	FILE *
 );
 

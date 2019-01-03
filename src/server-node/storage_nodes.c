@@ -1,7 +1,7 @@
 /**
 *	storage_lists.c - Функции модуля storage 
 *	децентрализованной сети illum отвечающие
-*	за работу приложения со списками.
+*	за работу приложения со списками нод.
 *
 *	@mrrva - 2018
 */
@@ -51,8 +51,10 @@ void illum_nodeselect(void)
 		tempdata = (char *)sql_data(rs, 2);
 		b_hash = p_enc->hex2byte(tempdata);
 
-		if (!b_hash || b_hash == NULL)
+		if (!b_hash || b_hash == NULL) {
 			free(temp);
+			continue;
+		}
 
 		memcpy(temp->hash, b_hash, HASHSIZE);
 		if (!illum_nodeinsert_list(temp))
@@ -62,8 +64,6 @@ void illum_nodeselect(void)
 
 	if (rs && rs != NULL)
 		sqlite3_finalize(rs);
-	if (b_hash && b_hash != NULL)
-		free(b_hash);
 }
 /**
 *	illum_nodeexists - Функция проверки существования
@@ -94,49 +94,59 @@ bool illum_nodeexists(char *ipaddr)
 bool illum_newnode(struct illumnodes *node)
 {
 	time_t utime = time(NULL);
+	char *query, *hash = NULL;
 	sqlite3_stmt *rs = NULL;
 	bool status = false;
-	char *query;
 
 	if (!node || node == NULL
 		|| illum_nodeexists(node->ip))
 		return false;
 
+	hash = p_enc->byte2hex(node->hash, 32);
+	if (hash == NULL)
+		goto exit_newnode;
+
 	asprintf(&query, "INSERT INTO `nodes` VALUES"
 		" (NULL, '%s', '%s', '%ld');", node->ip,
-		node->hash, utime);
+		hash, utime);
 	sqlite3_prepare_v2(db, query, -1, &rs, NULL);
 
 	if (sqlite3_step(rs) != SQLITE_DONE)
 		goto exit_newnode;
-	status = illum_nodeinsert_list(node);
+
+	illum_freenode();
+	illum_nodeselect();
+	status = true;
 
 exit_newnode:
 	if (rs && rs != NULL)
 		sqlite3_finalize(rs);
-	free(query);
+	if (query && query != NULL)
+		free(query);
+	if (hash != NULL)
+		free(hash);
 
 	return status;
 }
 /**
 *	illum_freenode - Функция удаления указателя
-*	на первую ноду или всего списка.
+*	на список нод.
 *
 */
-void illum_freenode(struct illumnodes *data, bool flag)
+void illum_freenode(void)
 {
-	struct illumnodes *temp;
+	struct illumnodes *temp = nodes;
 
-	if (!data || data == NULL)
+	if (!nodes || nodes == NULL)
 		return;
 
 	do {
-		temp = data;
-		data = data->next;
+		temp = nodes;
+		nodes = nodes->next;
 
 		free(temp);
 	}
-	while(data != NULL && flag);
+	while(nodes != NULL);
 }
 /**
 *	illum_printnodes - Функция отображение всех
@@ -158,4 +168,13 @@ void illum_printnodes(void)
 		temp = temp->next;
 		free(hash);
 	}
+}
+/**
+*	illum_getnodes - Функция извлечения указателя
+*	на список нод.
+*
+*/
+struct illumnodes *illum_getnodes()
+{
+	return nodes;
 }
